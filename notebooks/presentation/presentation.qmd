@@ -143,6 +143,9 @@ Can be used to model continuous time dynamics. Note that if we aim to approximat
 ![Normal-Gamma](../../experiments/normal_normal_reversibility.png){height=25%}
 :::
 
+# Synthetic Results (Hamiltonian Conservation)
+![Hamiltonian Conservation](../../experiments/hamiltonian_conservation.png)
+
 # Synthetic Results (Sample Efficiency)
 
 ![Varied percent of trajectories used as training, and plotted ESS as a result.](../../experiments/ess_stats.png){height=70%}
