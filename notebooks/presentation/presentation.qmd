@@ -159,4 +159,5 @@ Can be used to model continuous time dynamics. Note that if we aim to approximat
 # Notes
 
 1. All work done in pytorch (hamiltorch package)
+
 # Questions ?
