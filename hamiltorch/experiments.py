@@ -5,7 +5,7 @@ import arviz as az
 from hamiltorch.samplers import leapfrog
 from hamiltorch.ode import SynchronousLeapfrog
 from hamiltorch.plot_utils import plot_results, plot_reversibility, plot_samples
-from hamiltorch.experiment_utils import banana_log_prob, gaussian_log_prob, high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad, normal_normal_conjugate
+from hamiltorch.experiment_utils import banana_log_prob, gaussian_log_prob, high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad, normal_normal_conjugate, compute_hamiltonian_error
 from arviz import ess, autocorr
 import pandas as pd
 import time
@@ -45,7 +45,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
         solver = SynchronousLeapfrog()
     if model_type == "HMC":
         params_hmc = hamiltorch.sample(log_prob_func=log_prob, params_init=params_init, num_samples=N,
-                               step_size=step_size, num_steps_per_sample=L, burn = burn)
+                               step_size=step_size, num_steps_per_sample=L, burn = int(burn*percent))
 
         model = lambda x, t: (None, torch.cat([torch.stack(item,0) for item in 
                                                leapfrog(x[..., :dim], x[..., dim:], log_prob_func=log_prob,steps = t.shape[0], 
@@ -165,6 +165,9 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         L = experiment_hyperparams[distribution]["L"] 
                         error, forward_traj, backward_traj = compute_reversibility_error(model_dict[model]["model"], initial_conditions,
                                                             t = torch.linspace(0, L * step_size, L ))
+                        hamiltonian_error = compute_hamiltonian_error(model_dict[model]["model"], initial_conditions,
+                                                            t = torch.linspace(0, L * step_size, L ), 
+                                                            log_prob_func=experiment_hyperparams[distribution]["log_prob"])
                         model_dict[model]["forward"] = forward_traj[0:5, :]
                         model_dict[model]["backward"] = backward_traj[0:5, :]
 
@@ -173,6 +176,8 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         error_dict["sensitivity"] = sensitivity
                         error_dict["distribution"] = distribution
                         error_dict["solver"] = solver
+                        error_dict["step_size"] = experiment_hyperparams[distribution]["step_size"]
+                        error_dict["hamiltonian_error"] = hamiltonian_error.detach().numpy()
                         error_dict["reversibility_error"] = error
                         error_dict["time"] = model_dict[model]["time"]
                         # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])

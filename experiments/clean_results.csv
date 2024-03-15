@@ -1,0 +1,601 @@
+distribution,model,hamiltonian_error_clean,step_size
+gaussian,HMC,0.04319393,0.3
+gaussian,HMC,0.11699603,0.3
+gaussian,HMC,0.13004622,0.3
+gaussian,HMC,0.08006863000000002,0.3
+gaussian,HMC,0.03279971,0.3
+gaussian,NNgHMC,0.0435973,0.3
+gaussian,NNgHMC,0.1205183,0.3
+gaussian,NNgHMC,0.1413719,0.3
+gaussian,NNgHMC,0.09760914,0.3
+gaussian,NNgHMC,0.04452161,0.3
+gaussian,Explicit NNODEgHMC,0.0025932400000000006,0.3
+gaussian,Explicit NNODEgHMC,0.09794995,0.3
+gaussian,Explicit NNODEgHMC,0.3663919,0.3
+gaussian,Explicit NNODEgHMC,0.77090454,0.3
+gaussian,Explicit NNODEgHMC,1.2259446,0.3
+gaussian,NNODEgHMC,0.0025932400000000006,0.3
+gaussian,NNODEgHMC,0.07161717,0.3
+gaussian,NNODEgHMC,0.16121884,0.3
+gaussian,NNODEgHMC,0.14041208,0.3
+gaussian,NNODEgHMC,0.06993097,0.3
+high_dimensional_gaussian,HMC,0.00074333,0.1
+high_dimensional_gaussian,HMC,0.0013484,0.1
+high_dimensional_gaussian,HMC,0.00161001,0.1
+high_dimensional_gaussian,HMC,0.00254494,0.1
+high_dimensional_gaussian,HMC,0.00144512,0.1
+high_dimensional_gaussian,NNgHMC,0.00087399,0.1
+high_dimensional_gaussian,NNgHMC,0.002249,0.1
+high_dimensional_gaussian,NNgHMC,0.00369477,0.1
+high_dimensional_gaussian,NNgHMC,0.00620933,0.1
+high_dimensional_gaussian,NNgHMC,0.0070179,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00073616,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00825178,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.03383539,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08195277,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.14950645,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00073616,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00142428,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00285362,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00597165,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00788766,0.1
+normal_normal,HMC,0.10056665999999999,0.1
+normal_normal,HMC,0.09054027,0.1
+normal_normal,HMC,0.22147483,0.1
+normal_normal,HMC,0.08703142,0.1
+normal_normal,HMC,0.3333265,0.1
+normal_normal,NNgHMC,0.10061984,0.1
+normal_normal,NNgHMC,0.08472238,0.1
+normal_normal,NNgHMC,0.253178,0.1
+normal_normal,NNgHMC,0.11450166,0.1
+normal_normal,NNgHMC,0.40291473,0.1
+normal_normal,Explicit NNODEgHMC,0.10388813,0.1
+normal_normal,Explicit NNODEgHMC,0.09872252,0.1
+normal_normal,Explicit NNODEgHMC,0.20856182,0.1
+normal_normal,Explicit NNODEgHMC,0.13079286,0.1
+normal_normal,Explicit NNODEgHMC,0.5803445,0.1
+normal_normal,NNODEgHMC,0.10388813,0.1
+normal_normal,NNODEgHMC,0.09908352,0.1
+normal_normal,NNODEgHMC,0.21204029999999996,0.1
+normal_normal,NNODEgHMC,0.10042779,0.1
+normal_normal,NNODEgHMC,0.40744752000000006,0.1
+gaussian,HMC,0.03652491,0.3
+gaussian,HMC,0.10972732,0.3
+gaussian,HMC,0.12194236,0.3
+gaussian,HMC,0.06881451,0.3
+gaussian,HMC,0.021929220000000003,0.3
+gaussian,NNgHMC,0.03639518,0.3
+gaussian,NNgHMC,0.10892104,0.3
+gaussian,NNgHMC,0.12293008999999999,0.3
+gaussian,NNgHMC,0.07246531,0.3
+gaussian,NNgHMC,0.02336768,0.3
+gaussian,Explicit NNODEgHMC,0.00262296,0.3
+gaussian,Explicit NNODEgHMC,0.08548611,0.3
+gaussian,Explicit NNODEgHMC,0.3349964,0.3
+gaussian,Explicit NNODEgHMC,0.68581426,0.3
+gaussian,Explicit NNODEgHMC,1.014657,0.3
+gaussian,NNODEgHMC,0.00262296,0.3
+gaussian,NNODEgHMC,0.06332187,0.3
+gaussian,NNODEgHMC,0.14573109,0.3
+gaussian,NNODEgHMC,0.11279809,0.3
+gaussian,NNODEgHMC,0.04336087,0.3
+high_dimensional_gaussian,HMC,0.0009365200000000001,0.1
+high_dimensional_gaussian,HMC,0.00185631,0.1
+high_dimensional_gaussian,HMC,0.00225374,0.1
+high_dimensional_gaussian,HMC,0.0031817099999999995,0.1
+high_dimensional_gaussian,HMC,0.00192697,0.1
+high_dimensional_gaussian,NNgHMC,0.00103987,0.1
+high_dimensional_gaussian,NNgHMC,0.00242046,0.1
+high_dimensional_gaussian,NNgHMC,0.00351077,0.1
+high_dimensional_gaussian,NNgHMC,0.00538362,0.1
+high_dimensional_gaussian,NNgHMC,0.00529816,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.0007326,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.0079102,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.03165677,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.075943,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.1377539,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0007326,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00165582,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00292563,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00543187,0.1
+high_dimensional_gaussian,NNODEgHMC,0.006355409999999999,0.1
+normal_normal,HMC,0.07559716,0.1
+normal_normal,HMC,0.07067794,0.1
+normal_normal,HMC,0.15785141,0.1
+normal_normal,HMC,0.09859576,0.1
+normal_normal,HMC,0.08431762,0.1
+normal_normal,NNgHMC,0.07203713,0.1
+normal_normal,NNgHMC,0.06363214,0.1
+normal_normal,NNgHMC,0.20278665,0.1
+normal_normal,NNgHMC,0.06198502,0.1
+normal_normal,NNgHMC,0.14655547,0.1
+normal_normal,Explicit NNODEgHMC,0.08669792,0.1
+normal_normal,Explicit NNODEgHMC,0.06941677,0.1
+normal_normal,Explicit NNODEgHMC,0.30026957,0.1
+normal_normal,Explicit NNODEgHMC,0.32636246,0.1
+normal_normal,Explicit NNODEgHMC,0.8889146000000001,0.1
+normal_normal,NNODEgHMC,0.08669792,0.1
+normal_normal,NNODEgHMC,0.07023734,0.1
+normal_normal,NNODEgHMC,0.19005087,0.1
+normal_normal,NNODEgHMC,0.06168887,0.1
+normal_normal,NNODEgHMC,0.13530001,0.1
+gaussian,HMC,0.02763041,0.3
+gaussian,HMC,0.09658889,0.3
+gaussian,HMC,0.11372932999999999,0.3
+gaussian,HMC,0.06056394,0.3
+gaussian,HMC,0.0037947699999999994,0.3
+gaussian,NNgHMC,0.02768797,0.3
+gaussian,NNgHMC,0.09720909,0.3
+gaussian,NNgHMC,0.117211,0.3
+gaussian,NNgHMC,0.06850258,0.3
+gaussian,NNgHMC,0.00438975,0.3
+gaussian,Explicit NNODEgHMC,0.0025522,0.3
+gaussian,Explicit NNODEgHMC,0.07571608,0.3
+gaussian,Explicit NNODEgHMC,0.32075503,0.3
+gaussian,Explicit NNODEgHMC,0.7133876,0.3
+gaussian,Explicit NNODEgHMC,1.1881758,0.3
+gaussian,NNODEgHMC,0.0025522,0.3
+gaussian,NNODEgHMC,0.05277448,0.3
+gaussian,NNODEgHMC,0.13827622,0.3
+gaussian,NNODEgHMC,0.1127257,0.3
+gaussian,NNODEgHMC,0.02622023,0.3
+high_dimensional_gaussian,HMC,0.00123404,0.1
+high_dimensional_gaussian,HMC,0.00168473,0.1
+high_dimensional_gaussian,HMC,0.00249389,0.1
+high_dimensional_gaussian,HMC,0.0024554,0.1
+high_dimensional_gaussian,HMC,0.00418624,0.1
+high_dimensional_gaussian,NNgHMC,0.00116379,0.1
+high_dimensional_gaussian,NNgHMC,0.00138287,0.1
+high_dimensional_gaussian,NNgHMC,0.00175415,0.1
+high_dimensional_gaussian,NNgHMC,0.00122153,0.1
+high_dimensional_gaussian,NNgHMC,0.00211475,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00073969,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00440498,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.01892145,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.04527038,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08056977,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00073969,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00099667,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0016587499999999999,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00104296,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00130533,0.1
+normal_normal,HMC,0.11203993,0.1
+normal_normal,HMC,0.14732617,0.1
+normal_normal,HMC,0.09930862,0.1
+normal_normal,HMC,0.18487746,0.1
+normal_normal,HMC,0.08980086,0.1
+normal_normal,NNgHMC,0.10847454,0.1
+normal_normal,NNgHMC,0.13585907,0.1
+normal_normal,NNgHMC,0.08107411,0.1
+normal_normal,NNgHMC,0.12232078,0.1
+normal_normal,NNgHMC,0.1487105,0.1
+normal_normal,Explicit NNODEgHMC,0.08106663,0.1
+normal_normal,Explicit NNODEgHMC,0.11948482999999999,0.1
+normal_normal,Explicit NNODEgHMC,0.08369634,0.1
+normal_normal,Explicit NNODEgHMC,0.16498691,0.1
+normal_normal,Explicit NNODEgHMC,0.06916212,0.1
+normal_normal,NNODEgHMC,0.08106663,0.1
+normal_normal,NNODEgHMC,0.11903296,0.1
+normal_normal,NNODEgHMC,0.08210726,0.1
+normal_normal,NNODEgHMC,0.13309668,0.1
+normal_normal,NNODEgHMC,0.15539299,0.1
+gaussian,HMC,0.04184962,0.3
+gaussian,HMC,0.11211597,0.3
+gaussian,HMC,0.1186992,0.3
+gaussian,HMC,0.05736911,0.3
+gaussian,HMC,0.00487423,0.3
+gaussian,NNgHMC,0.04208467,0.3
+gaussian,NNgHMC,0.11453321,0.3
+gaussian,NNgHMC,0.12647235,0.3
+gaussian,NNgHMC,0.06857095,0.3
+gaussian,NNgHMC,0.00270551,0.3
+gaussian,Explicit NNODEgHMC,0.00257559,0.3
+gaussian,Explicit NNODEgHMC,0.09484801,0.3
+gaussian,Explicit NNODEgHMC,0.3459187,0.3
+gaussian,Explicit NNODEgHMC,0.6946213,0.3
+gaussian,Explicit NNODEgHMC,1.0225602,0.3
+gaussian,NNODEgHMC,0.00257559,0.3
+gaussian,NNODEgHMC,0.06927541,0.3
+gaussian,NNODEgHMC,0.15163904000000003,0.3
+gaussian,NNODEgHMC,0.11406145,0.3
+gaussian,NNODEgHMC,0.02411632,0.3
+high_dimensional_gaussian,HMC,0.00099493,0.1
+high_dimensional_gaussian,HMC,0.0019090899999999998,0.1
+high_dimensional_gaussian,HMC,0.00215668,0.1
+high_dimensional_gaussian,HMC,0.0028185,0.1
+high_dimensional_gaussian,HMC,0.00126936,0.1
+high_dimensional_gaussian,NNgHMC,0.0010469,0.1
+high_dimensional_gaussian,NNgHMC,0.00217876,0.1
+high_dimensional_gaussian,NNgHMC,0.00276008,0.1
+high_dimensional_gaussian,NNgHMC,0.0038819,0.1
+high_dimensional_gaussian,NNgHMC,0.00284684,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00072827,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.007005479999999999,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.02399339,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.05263359,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08999413,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00072827,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0016333,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00245515,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00412204,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0038794699999999994,0.1
+normal_normal,HMC,0.07005461,0.1
+normal_normal,HMC,0.058225549999999994,0.1
+normal_normal,HMC,0.06326535,0.1
+normal_normal,HMC,0.21983509999999998,0.1
+normal_normal,HMC,0.19544281,0.1
+normal_normal,NNgHMC,0.10794573000000002,0.1
+normal_normal,NNgHMC,0.24012735,0.1
+normal_normal,NNgHMC,0.46074386999999994,0.1
+normal_normal,NNgHMC,0.27328166,0.1
+normal_normal,NNgHMC,0.29905942,0.1
+normal_normal,Explicit NNODEgHMC,0.06897116,0.1
+normal_normal,Explicit NNODEgHMC,0.16455382,0.1
+normal_normal,Explicit NNODEgHMC,0.63919604,0.1
+normal_normal,Explicit NNODEgHMC,0.91087186,0.1
+normal_normal,Explicit NNODEgHMC,1.8377107,0.1
+normal_normal,NNODEgHMC,0.06897116,0.1
+normal_normal,NNODEgHMC,0.14200449,0.1
+normal_normal,NNODEgHMC,0.43632424000000003,0.1
+normal_normal,NNODEgHMC,0.29778385,0.1
+normal_normal,NNODEgHMC,0.30899537,0.1
+gaussian,HMC,0.03549042,0.3
+gaussian,HMC,0.11112186,0.3
+gaussian,HMC,0.13027078,0.3
+gaussian,HMC,0.08142716,0.3
+gaussian,HMC,0.02802412,0.3
+gaussian,NNgHMC,0.03525528,0.3
+gaussian,NNgHMC,0.1100745,0.3
+gaussian,NNgHMC,0.12975858,0.3
+gaussian,NNgHMC,0.08309013,0.3
+gaussian,NNgHMC,0.03006118,0.3
+gaussian,Explicit NNODEgHMC,0.00265451,0.3
+gaussian,Explicit NNODEgHMC,0.08551461,0.3
+gaussian,Explicit NNODEgHMC,0.33850017000000004,0.3
+gaussian,Explicit NNODEgHMC,0.7038389400000001,0.3
+gaussian,Explicit NNODEgHMC,1.0628657,0.3
+gaussian,NNODEgHMC,0.00265451,0.3
+gaussian,NNODEgHMC,0.06234956,0.3
+gaussian,NNODEgHMC,0.15033585000000002,0.3
+gaussian,NNODEgHMC,0.12441012,0.3
+gaussian,NNODEgHMC,0.05092677,0.3
+high_dimensional_gaussian,HMC,0.00091843,0.1
+high_dimensional_gaussian,HMC,0.00106871,0.1
+high_dimensional_gaussian,HMC,0.00160681,0.1
+high_dimensional_gaussian,HMC,0.00154446,0.1
+high_dimensional_gaussian,HMC,0.0033091600000000002,0.1
+high_dimensional_gaussian,NNgHMC,0.0008833299999999999,0.1
+high_dimensional_gaussian,NNgHMC,0.0009282499999999999,0.1
+high_dimensional_gaussian,NNgHMC,0.00120292,0.1
+high_dimensional_gaussian,NNgHMC,0.0009292,0.1
+high_dimensional_gaussian,NNgHMC,0.0020574,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00073551,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00456611,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.01917996,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.04568734,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.081213,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00073551,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00074308,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00113097,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0007998699999999999,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00129007,0.1
+normal_normal,HMC,0.05173242,0.1
+normal_normal,HMC,0.05185067,0.1
+normal_normal,HMC,0.06022216,0.1
+normal_normal,HMC,0.18209878,0.1
+normal_normal,HMC,0.21617949999999997,0.1
+normal_normal,NNgHMC,0.0536662,0.1
+normal_normal,NNgHMC,0.1378316,0.1
+normal_normal,NNgHMC,0.39462903,0.1
+normal_normal,NNgHMC,0.37283084,0.1
+normal_normal,NNgHMC,0.6130027,0.1
+normal_normal,Explicit NNODEgHMC,0.06447212,0.1
+normal_normal,Explicit NNODEgHMC,0.06475066,0.1
+normal_normal,Explicit NNODEgHMC,0.3635902,0.1
+normal_normal,Explicit NNODEgHMC,0.5095522,0.1
+normal_normal,Explicit NNODEgHMC,1.1762667,0.1
+normal_normal,NNODEgHMC,0.06447212,0.1
+normal_normal,NNODEgHMC,0.06081852,0.1
+normal_normal,NNODEgHMC,0.3213539,0.1
+normal_normal,NNODEgHMC,0.34317902,0.1
+normal_normal,NNODEgHMC,0.6101303,0.1
+gaussian,HMC,0.04298706,0.3
+gaussian,HMC,0.10359478,0.3
+gaussian,HMC,0.09581102,0.3
+gaussian,HMC,0.03383828,0.3
+gaussian,HMC,0.00588015,0.3
+gaussian,NNgHMC,0.04302843,0.3
+gaussian,NNgHMC,0.10423224000000002,0.3
+gaussian,NNgHMC,0.09903953,0.3
+gaussian,NNgHMC,0.03850843,0.3
+gaussian,NNgHMC,0.00495503,0.3
+gaussian,Explicit NNODEgHMC,0.00253093,0.3
+gaussian,Explicit NNODEgHMC,0.09931872000000001,0.3
+gaussian,Explicit NNODEgHMC,0.3675934,0.3
+gaussian,Explicit NNODEgHMC,0.7757729,0.3
+gaussian,Explicit NNODEgHMC,1.2523873,0.3
+gaussian,NNODEgHMC,0.00253093,0.3
+gaussian,NNODEgHMC,0.06931169,0.3
+gaussian,NNODEgHMC,0.13281608,0.3
+gaussian,NNODEgHMC,0.080996,0.3
+gaussian,NNODEgHMC,0.01393825,0.3
+high_dimensional_gaussian,HMC,0.0007821,0.1
+high_dimensional_gaussian,HMC,0.00185392,0.1
+high_dimensional_gaussian,HMC,0.00280908,0.1
+high_dimensional_gaussian,HMC,0.00466022,0.1
+high_dimensional_gaussian,HMC,0.00460728,0.1
+high_dimensional_gaussian,NNgHMC,0.0007907700000000001,0.1
+high_dimensional_gaussian,NNgHMC,0.00191204,0.1
+high_dimensional_gaussian,NNgHMC,0.00293539,0.1
+high_dimensional_gaussian,NNgHMC,0.00487841,0.1
+high_dimensional_gaussian,NNgHMC,0.00493928,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00074655,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.006492519999999999,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.02323729,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.05195386,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08967935,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00074655,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00128675,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00230369,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00475718,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00573907,0.1
+normal_normal,HMC,0.05880931,0.1
+normal_normal,HMC,0.06023795,0.1
+normal_normal,HMC,0.13400045,0.1
+normal_normal,HMC,0.10320532,0.1
+normal_normal,HMC,0.0956398,0.1
+normal_normal,NNgHMC,0.06245998,0.1
+normal_normal,NNgHMC,0.13077624,0.1
+normal_normal,NNgHMC,0.3862869,0.1
+normal_normal,NNgHMC,0.31052604,0.1
+normal_normal,NNgHMC,0.5121044,0.1
+normal_normal,Explicit NNODEgHMC,0.07323948,0.1
+normal_normal,Explicit NNODEgHMC,0.06387319,0.1
+normal_normal,Explicit NNODEgHMC,0.3548228,0.1
+normal_normal,Explicit NNODEgHMC,0.44411534,0.1
+normal_normal,Explicit NNODEgHMC,1.0409805,0.1
+normal_normal,NNODEgHMC,0.07323948,0.1
+normal_normal,NNODEgHMC,0.06503543,0.1
+normal_normal,NNODEgHMC,0.3276623,0.1
+normal_normal,NNODEgHMC,0.30073228,0.1
+normal_normal,NNODEgHMC,0.5259288,0.1
+gaussian,HMC,0.05024829,0.3
+gaussian,HMC,0.1237151,0.3
+gaussian,HMC,0.12914592,0.3
+gaussian,HMC,0.07770779,0.3
+gaussian,HMC,0.04376088,0.3
+gaussian,NNgHMC,0.04983725000000001,0.3
+gaussian,NNgHMC,0.12247266,0.3
+gaussian,NNgHMC,0.12920402,0.3
+gaussian,NNgHMC,0.08025154,0.3
+gaussian,NNgHMC,0.046192050000000005,0.3
+gaussian,Explicit NNODEgHMC,0.00264687,0.3
+gaussian,Explicit NNODEgHMC,0.10911949,0.3
+gaussian,Explicit NNODEgHMC,0.39800653,0.3
+gaussian,Explicit NNODEgHMC,0.8382589000000001,0.3
+gaussian,Explicit NNODEgHMC,1.3434308,0.3
+gaussian,NNODEgHMC,0.00264687,0.3
+gaussian,NNODEgHMC,0.07863425,0.3
+gaussian,NNODEgHMC,0.1560167,0.3
+gaussian,NNODEgHMC,0.11804451,0.3
+gaussian,NNODEgHMC,0.06483941,0.3
+high_dimensional_gaussian,HMC,0.00069409,0.1
+high_dimensional_gaussian,HMC,0.00084606,0.1
+high_dimensional_gaussian,HMC,0.00071373,0.1
+high_dimensional_gaussian,HMC,0.00071874,0.1
+high_dimensional_gaussian,HMC,0.00214761,0.1
+high_dimensional_gaussian,NNgHMC,0.00070704,0.1
+high_dimensional_gaussian,NNgHMC,0.00098594,0.1
+high_dimensional_gaussian,NNgHMC,0.0008774299999999999,0.1
+high_dimensional_gaussian,NNgHMC,0.00109427,0.1
+high_dimensional_gaussian,NNgHMC,0.00101647,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00072447,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00630983,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.02247649,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.05013303,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08638426,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00072447,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0009375099999999999,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00083534,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00121078,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00074233,0.1
+normal_normal,HMC,0.06362759,0.1
+normal_normal,HMC,0.05989295,0.1
+normal_normal,HMC,0.14046623,0.1
+normal_normal,HMC,0.08369225,0.1
+normal_normal,HMC,0.07299683,0.1
+normal_normal,NNgHMC,0.06169001999999999,0.1
+normal_normal,NNgHMC,0.07714363,0.1
+normal_normal,NNgHMC,0.31505466,0.1
+normal_normal,NNgHMC,0.25618467,0.1
+normal_normal,NNgHMC,0.5003357,0.1
+normal_normal,Explicit NNODEgHMC,0.07506881,0.1
+normal_normal,Explicit NNODEgHMC,0.06025989000000001,0.1
+normal_normal,Explicit NNODEgHMC,0.27785507,0.1
+normal_normal,Explicit NNODEgHMC,0.32619664,0.1
+normal_normal,Explicit NNODEgHMC,0.8578502000000001,0.1
+normal_normal,NNODEgHMC,0.07506881,0.1
+normal_normal,NNODEgHMC,0.05896577,0.1
+normal_normal,NNODEgHMC,0.25876945,0.1
+normal_normal,NNODEgHMC,0.23643444,0.1
+normal_normal,NNODEgHMC,0.5081707,0.1
+gaussian,HMC,0.05276344,0.3
+gaussian,HMC,0.11740728,0.3
+gaussian,HMC,0.11013052,0.3
+gaussian,HMC,0.05083796,0.3
+gaussian,HMC,0.01527885,0.3
+gaussian,NNgHMC,0.05294101,0.3
+gaussian,NNgHMC,0.11829175,0.3
+gaussian,NNgHMC,0.11322052,0.3
+gaussian,NNgHMC,0.05601716,0.3
+gaussian,NNgHMC,0.01953393,0.3
+gaussian,Explicit NNODEgHMC,0.00257019,0.3
+gaussian,Explicit NNODEgHMC,0.11501539,0.3
+gaussian,Explicit NNODEgHMC,0.39073372,0.3
+gaussian,Explicit NNODEgHMC,0.7647829700000001,0.3
+gaussian,Explicit NNODEgHMC,1.117509,0.3
+gaussian,NNODEgHMC,0.00257019,0.3
+gaussian,NNODEgHMC,0.08096265,0.3
+gaussian,NNODEgHMC,0.14636593,0.3
+gaussian,NNODEgHMC,0.09556253000000002,0.3
+gaussian,NNODEgHMC,0.03672108,0.3
+high_dimensional_gaussian,HMC,0.00069234,0.1
+high_dimensional_gaussian,HMC,0.00124926,0.1
+high_dimensional_gaussian,HMC,0.0017033500000000002,0.1
+high_dimensional_gaussian,HMC,0.00298631,0.1
+high_dimensional_gaussian,HMC,0.00233244,0.1
+high_dimensional_gaussian,NNgHMC,0.000691,0.1
+high_dimensional_gaussian,NNgHMC,0.00126387,0.1
+high_dimensional_gaussian,NNgHMC,0.00173416,0.1
+high_dimensional_gaussian,NNgHMC,0.0030338,0.1
+high_dimensional_gaussian,NNgHMC,0.00239642,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00074193,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00620695,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.02261862,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.05095156,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.08827806,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00074193,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00100685,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00149802,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00331677,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00361506,0.1
+normal_normal,HMC,0.08732567,0.1
+normal_normal,HMC,0.13374706,0.1
+normal_normal,HMC,0.1275401,0.1
+normal_normal,HMC,0.2516244,0.1
+normal_normal,HMC,0.22290964000000002,0.1
+normal_normal,NNgHMC,0.08678743,0.1
+normal_normal,NNgHMC,0.13006292,0.1
+normal_normal,NNgHMC,0.11339471,0.1
+normal_normal,NNgHMC,0.22741610999999998,0.1
+normal_normal,NNgHMC,0.18678436,0.1
+normal_normal,Explicit NNODEgHMC,0.0560611,0.1
+normal_normal,Explicit NNODEgHMC,0.0931586,0.1
+normal_normal,Explicit NNODEgHMC,0.07747617,0.1
+normal_normal,Explicit NNODEgHMC,0.18735921,0.1
+normal_normal,Explicit NNODEgHMC,0.14744495,0.1
+normal_normal,NNODEgHMC,0.0560611,0.1
+normal_normal,NNODEgHMC,0.09742015,0.1
+normal_normal,NNODEgHMC,0.0928196,0.1
+normal_normal,NNODEgHMC,0.21686365,0.1
+normal_normal,NNODEgHMC,0.18597308,0.1
+gaussian,HMC,0.04638016,0.3
+gaussian,HMC,0.11357834,0.3
+gaussian,HMC,0.1178835,0.3
+gaussian,HMC,0.06678782,0.3
+gaussian,HMC,0.02737821,0.3
+gaussian,NNgHMC,0.0462625,0.3
+gaussian,NNgHMC,0.11382113,0.3
+gaussian,NNgHMC,0.11977264,0.3
+gaussian,NNgHMC,0.06941483,0.3
+gaussian,NNgHMC,0.027306890000000004,0.3
+gaussian,Explicit NNODEgHMC,0.00257272,0.3
+gaussian,Explicit NNODEgHMC,0.10738359,0.3
+gaussian,Explicit NNODEgHMC,0.38709053,0.3
+gaussian,Explicit NNODEgHMC,0.8073157700000001,0.3
+gaussian,Explicit NNODEgHMC,1.2818753,0.3
+gaussian,NNODEgHMC,0.00257272,0.3
+gaussian,NNODEgHMC,0.07354216,0.3
+gaussian,NNODEgHMC,0.1475432,0.3
+gaussian,NNODEgHMC,0.1103231,0.3
+gaussian,NNODEgHMC,0.04748899,0.3
+high_dimensional_gaussian,HMC,0.00174527,0.1
+high_dimensional_gaussian,HMC,0.00389633,0.1
+high_dimensional_gaussian,HMC,0.00552423,0.1
+high_dimensional_gaussian,HMC,0.0077686,0.1
+high_dimensional_gaussian,HMC,0.00782728,0.1
+high_dimensional_gaussian,NNgHMC,0.0017514699999999998,0.1
+high_dimensional_gaussian,NNgHMC,0.00392417,0.1
+high_dimensional_gaussian,NNgHMC,0.00559457,0.1
+high_dimensional_gaussian,NNgHMC,0.00790665,0.1
+high_dimensional_gaussian,NNgHMC,0.00806234,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00074038,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00795952,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.02603324,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.05588778999999999,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.09455303,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00074038,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00266412,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00481566,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00802275,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00937197,0.1
+normal_normal,HMC,0.06162072,0.1
+normal_normal,HMC,0.06144004,0.1
+normal_normal,HMC,0.11359576,0.1
+normal_normal,HMC,0.13572079,0.1
+normal_normal,HMC,0.13710085,0.1
+normal_normal,NNgHMC,0.06907789,0.1
+normal_normal,NNgHMC,0.1587216,0.1
+normal_normal,NNgHMC,0.46675795,0.1
+normal_normal,NNgHMC,0.42557114,0.1
+normal_normal,NNgHMC,0.71694136,0.1
+normal_normal,Explicit NNODEgHMC,0.07651718,0.1
+normal_normal,Explicit NNODEgHMC,0.06782465,0.1
+normal_normal,Explicit NNODEgHMC,0.38468358,0.1
+normal_normal,Explicit NNODEgHMC,0.4939735,0.1
+normal_normal,Explicit NNODEgHMC,1.166551,0.1
+normal_normal,NNODEgHMC,0.07651718,0.1
+normal_normal,NNODEgHMC,0.07282192,0.1
+normal_normal,NNODEgHMC,0.3799844,0.1
+normal_normal,NNODEgHMC,0.3935678,0.1
+normal_normal,NNODEgHMC,0.7159758,0.1
+gaussian,HMC,0.01237789,0.3
+gaussian,HMC,0.0666711,0.3
+gaussian,HMC,0.08030687000000002,0.3
+gaussian,HMC,0.0393209,0.3
+gaussian,HMC,0.00390746,0.3
+gaussian,NNgHMC,0.01242549,0.3
+gaussian,NNgHMC,0.06665086,0.3
+gaussian,NNgHMC,0.08100226,0.3
+gaussian,NNgHMC,0.04080134,0.3
+gaussian,NNgHMC,0.00422595,0.3
+gaussian,Explicit NNODEgHMC,0.00254933,0.3
+gaussian,Explicit NNODEgHMC,0.06039318,0.3
+gaussian,Explicit NNODEgHMC,0.2973489,0.3
+gaussian,Explicit NNODEgHMC,0.6915008,0.3
+gaussian,Explicit NNODEgHMC,1.1739389,0.3
+gaussian,NNODEgHMC,0.00254933,0.3
+gaussian,NNODEgHMC,0.03277836,0.3
+gaussian,NNODEgHMC,0.10074224,0.3
+gaussian,NNODEgHMC,0.07708286000000002,0.3
+gaussian,NNODEgHMC,0.013829950000000002,0.3
+high_dimensional_gaussian,HMC,0.0016855400000000001,0.1
+high_dimensional_gaussian,HMC,0.0033419699999999997,0.1
+high_dimensional_gaussian,HMC,0.00409582,0.1
+high_dimensional_gaussian,HMC,0.00509013,0.1
+high_dimensional_gaussian,HMC,0.0036308,0.1
+high_dimensional_gaussian,NNgHMC,0.00171395,0.1
+high_dimensional_gaussian,NNgHMC,0.00346313,0.1
+high_dimensional_gaussian,NNgHMC,0.00437316,0.1
+high_dimensional_gaussian,NNgHMC,0.0055865,0.1
+high_dimensional_gaussian,NNgHMC,0.00440497,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.00072479,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.0079996,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.025876849999999996,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.055294029999999994,0.1
+high_dimensional_gaussian,Explicit NNODEgHMC,0.09333543,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00072479,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00253224,0.1
+high_dimensional_gaussian,NNODEgHMC,0.0039762,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00591484,0.1
+high_dimensional_gaussian,NNODEgHMC,0.00558565,0.1
+normal_normal,HMC,0.10464104000000002,0.1
+normal_normal,HMC,0.13444833,0.1
+normal_normal,HMC,0.08819294,0.1
+normal_normal,HMC,0.17197788,0.1
+normal_normal,HMC,0.09249063,0.1
+normal_normal,NNgHMC,0.09887823,0.1
+normal_normal,NNgHMC,0.11749930999999998,0.1
+normal_normal,NNgHMC,0.057218479999999995,0.1
+normal_normal,NNgHMC,0.07316961,0.1
+normal_normal,NNgHMC,0.23957784,0.1
+normal_normal,Explicit NNODEgHMC,0.07837803,0.1
+normal_normal,Explicit NNODEgHMC,0.1100126,0.1
+normal_normal,Explicit NNODEgHMC,0.07404628,0.1
+normal_normal,Explicit NNODEgHMC,0.13576813,0.1
+normal_normal,Explicit NNODEgHMC,0.07099461,0.1
+normal_normal,NNODEgHMC,0.07837803,0.1
+normal_normal,NNODEgHMC,0.10783923000000001,0.1
+normal_normal,NNODEgHMC,0.06268246,0.1
+normal_normal,NNODEgHMC,0.08912656,0.1
+normal_normal,NNODEgHMC,0.24163674999999998,0.1
