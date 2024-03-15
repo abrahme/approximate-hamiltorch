@@ -135,7 +135,17 @@ Can be used to model continuous time dynamics. Note that if we aim to approximat
 ![HNNODE](HNNODE.drawio%20(1).png){height=50%}
 :::
 
-# Synthetic Results 
+# Synthetic Results (Reversibility & Posterior Samples)
+
+::: {layout-ncol=2}
+![2D Gaussian](../../experiments/gaussian_reversibility.png){height=25%}
+
+![Normal-Gamma](../../experiments/normal_normal_reversibility.png){height=25%}
+:::
+
+# Synthetic Results (Sample Efficiency)
+
+![Varied percent of trajectories used as training, and plotted ESS as a result.](../../experiments/ess_stats.png){height=70%}
 
 
 # Future Work 
@@ -146,4 +156,7 @@ Can be used to model continuous time dynamics. Note that if we aim to approximat
 3. Integrate this approach with No U-Turn Sampling
 4. Analysis of more challenging distributions
 
+# Notes
+
+1. All work done in pytorch (hamiltorch package)
 # Questions ?
