@@ -64,7 +64,7 @@ def compute_hamiltonian_error(model, test_initial_conditions, t, log_prob_func):
         initial_hamiltonian_values = initial_hamiltonian_values[index]
 
     delta_hamiltonian = torch.abs(forward_hamiltonians - initial_hamiltonian_values[:, None]) / (initial_hamiltonian_values[:, None])
-    return torch.mean(delta_hamiltonian, dim = 0)
+    return torch.mean(delta_hamiltonian, dim = -1)
 
 
 def params_grad(p, log_prob_func):
