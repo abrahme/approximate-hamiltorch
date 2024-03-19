@@ -71,10 +71,9 @@ class RMHNNEnergyDeriv(nn.Module):
         self.potential_deriv = NNgHMC(input_dim = self.input_dim, output_dim=self.input_dim, hidden_dim=self.hidden_dim)
     def forward(self, x, *args, **kwargs):
         n = self.input_dim  ### here it is both p, q concatenated
-        state_space = x[..., :n] 
-        dH = self.potential_deriv(state_space)
+        dH = self.potential_deriv(x)
         dHdq, dHdp = dH[..., : n // 2], dH[..., n // 2: ]
-        return  torch.cat([dHdp, -dHdq], - 1)
+        return  torch.cat([1*dHdp, -dHdq], - 1)
 
 
 class PotentialFunction(nn.Module):
@@ -239,7 +238,7 @@ class RMHNN(nn.Module):
         with torch.set_grad_enabled(True): 
             x = x.requires_grad_(True)
             gradH = grad(self.H(x).sum(), x, create_graph=True)[0]
-        return torch.cat([gradH[..., n:2*n], -gradH[..., :n]], -1).to(x)
+        return torch.cat([gradH[..., n:], -gradH[..., :n]], -1).to(x)
 
 class HNNODE(nn.Module):
     def __init__(self, odefunc: Union[HNN,HNNEnergyDeriv], sensitivity="adjoint", solver="dopri5", atol=1e-3, rtol=1e-3) -> None:
