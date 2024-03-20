@@ -17,27 +17,30 @@ class SymplecticLinearBlock(nn.Module):
         self.dim = dim
         self.param_dim = dim // 2
 
-        self.bias = nn.Parameter(torch.ones(self.dim))
         self.channels = channels
+
+        self.bias = nn.ParameterList([nn.Parameter(torch.ones(self.dim)) for _ in range(self.channels)])
         self.A = nn.ModuleList([nn.Linear(self.param_dim,self.param_dim, bias = False) for _ in range(self.channels)])
         for layer in self.A:
             parametrize.register_parametrization(layer, "weight", parametrization=Symmetric())
-    
+            nn.init.orthogonal_(layer.weight)
+        for bias in self.bias:
+            nn.init.normal_(bias)
     def forward(self, z, dt) -> torch.Tensor:
         ### assume the first block is up, the second is down and they alternate
         #### dt is the step size 
         mode = "up"
         
         final_result = torch.matmul(z,torch.eye(self.dim))
-        for layer in self.A:
-            q, p = torch.hsplit(final_result, (self.dim, 2), -1)
+        for bias, layer in zip(self.bias,self.A):
+            q, p = torch.hsplit(final_result, 2)
             if mode == "up":
-                final_result = torch.cat([q + layer(p)*dt, p], -1)
+                final_result = torch.cat([q + layer(p)*dt, p], -1) + bias*dt
                 mode = "down"
             elif mode == "down":
-                final_result = torch.cat([q, p + layer(q)*dt], -1)
+                final_result = torch.cat([q, p + layer(q)*dt], -1) + bias * dt
                 mode = "up" ### alternate modes
-        return final_result + self.bias*dt
+        return final_result 
 
 class SymplecticActivation(nn.Module):
     def __init__(self, dim: int, mode: str) -> None:
@@ -47,15 +50,15 @@ class SymplecticActivation(nn.Module):
         self.dim = dim
         self.mode = mode
         self.param_dim = dim // 2
-        self.activation = nn.Sigmoid()
+        self.activation = nn.SiLU()
         self.a = nn.Parameter(torch.ones(self.param_dim))
-    
+        nn.init.normal_(self.a)
     def forward(self, z, dt) -> torch.Tensor:
-        q, p = torch.hsplit(z, (self.dim, 2), -1)
+        q, p = torch.hsplit(z, 2)
         if self.mode == "up":
-            return torch.cat([q, dt*self.activation(p) * self.a + p], -1)
+            return torch.cat([q, dt*self.activation(q) * self.a + p], -1)
         elif self.mode == "down":
-            return torch.cat([p, dt*self.activation(q)*self.a + q], -1)
+            return torch.cat([dt*self.activation(p)*self.a + q, p], -1)
 
         else:
             return z
@@ -68,25 +71,30 @@ class LASymplecticBlock(nn.Module):
         self.activation_block = SymplecticActivation(dim = dim, mode = activation_mode)
 
     def forward(self, z, dt) -> torch.Tensor:
-        return self.activation_block(self.linear_block(z, dt))
+        return self.activation_block(self.linear_block(z, dt), dt)
 
 
 class SymplecticNeuralNetwork(nn.Module):
     def __init__(self, dim, activation_modes: list[str], channels: list[int]) -> None:
         super(SymplecticNeuralNetwork, self).__init__()
         self.layers = nn.ModuleList([LASymplecticBlock(dim, activation_mode, channel) for (activation_mode, channel) in zip (activation_modes, channels)])
-    def forward(self, z, dt) -> torch.Tensor:
+    def step(self, z, dt) -> torch.Tensor:
         for layer in self.layers:
             z = layer(z, dt)
         return z
 
-    def roll_forward(self, z, t):
+    def forward(self, z, t):
         ### here z is the initial position, and t is a tensor of variable times
-        ### this predicts at each of the variable times
-
-        forward_t = lambda t: self.forward(z, t)
-        preds = torch.vmap(forward_t, out_dims=0)(t)
-        return t, preds
+        ### this predicts at each of the variable time
+        
+        # forward_t = lambda t: self.step(z, t)
+        # preds = torch.vmap(forward_t, out_dims=0)(t)
+        dts = torch.diff(t, prepend = torch.zeros(1))
+        preds = []
+        for dt in dts:
+            z = self.step(z, dt)
+            preds.append(z)
+        return t, torch.stack(preds,axis=0)
 
 
 

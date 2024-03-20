@@ -29,7 +29,7 @@ def plot_samples(sample_dict: Dict, mean, distribution_name=""):
     
     """
     fs=16
-    fig, axs = plt.subplots(2, 2, figsize=(15,15), sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 3, figsize=(15,15), sharex=True, sharey=True)
     for index, label in enumerate(sample_dict):
         samples = torch.stack(sample_dict[label]["samples"],0)
         axs.flat[index].scatter(samples[:,0],samples[:,1], s=5,alpha=0.3,label=label)
@@ -43,7 +43,7 @@ def plot_samples(sample_dict: Dict, mean, distribution_name=""):
 
 
 def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
-    fig, axs = plt.subplots(2, 2, figsize=(15,15), sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 3, figsize=(15,15), sharex=True, sharey=True)
 
     
     # Add samples 
