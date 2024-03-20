@@ -23,37 +23,39 @@ class SymplecticLinearBlock(nn.Module):
         for layer in self.A:
             parametrize.register_parametrization(layer, "weight", parametrization=Symmetric())
     
-    def forward(self, z) -> torch.Tensor:
+    def forward(self, z, dt) -> torch.Tensor:
         ### assume the first block is up, the second is down and they alternate
+        #### dt is the step size 
         mode = "up"
         
         final_result = torch.matmul(z,torch.eye(self.dim))
         for layer in self.A:
-            q, p = torch.split(final_result, (self.dim, 2), -1)
+            q, p = torch.hsplit(final_result, (self.dim, 2), -1)
             if mode == "up":
-                final_result = torch.cat([q + layer(p), p], -1)
+                final_result = torch.cat([q + layer(p)*dt, p], -1)
                 mode = "down"
             elif mode == "down":
-                final_result = torch.cat([q, p + layer(q)], -1)
+                final_result = torch.cat([q, p + layer(q)*dt], -1)
                 mode = "up" ### alternate modes
-        return final_result + self.bias
+        return final_result + self.bias*dt
 
 class SymplecticActivation(nn.Module):
     def __init__(self, dim: int, mode: str) -> None:
         super(SymplecticActivation, self).__init__()
         assert (dim % 2) == 0
+        assert (mode in ["up", "down"])
         self.dim = dim
         self.mode = mode
         self.param_dim = dim // 2
         self.activation = nn.Sigmoid()
         self.a = nn.Parameter(torch.ones(self.param_dim))
     
-    def forward(self, z) -> torch.Tensor:
+    def forward(self, z, dt) -> torch.Tensor:
         q, p = torch.hsplit(z, (self.dim, 2), -1)
         if self.mode == "up":
-            return torch.cat([q, self.activation(p) * self.a + p], -1)
+            return torch.cat([q, dt*self.activation(p) * self.a + p], -1)
         elif self.mode == "down":
-            return torch.cat([p, self.activation(q)*self.a + q], -1)
+            return torch.cat([p, dt*self.activation(q)*self.a + q], -1)
 
         else:
             return z
@@ -65,18 +67,27 @@ class LASymplecticBlock(nn.Module):
         self.linear_block = SymplecticLinearBlock(dim = dim, channels=channels)
         self.activation_block = SymplecticActivation(dim = dim, mode = activation_mode)
 
-    def forward(self, z) -> torch.Tensor:
-        return self.activation_block(self.linear_block(z))
+    def forward(self, z, dt) -> torch.Tensor:
+        return self.activation_block(self.linear_block(z, dt))
 
 
 class SymplecticNeuralNetwork(nn.Module):
     def __init__(self, dim, activation_modes: list[str], channels: list[int]) -> None:
         super(SymplecticNeuralNetwork, self).__init__()
         self.layers = nn.ModuleList([LASymplecticBlock(dim, activation_mode, channel) for (activation_mode, channel) in zip (activation_modes, channels)])
-    def forward(self, z) -> torch.Tensor:
+    def forward(self, z, dt) -> torch.Tensor:
         for layer in self.layers:
-            z = layer(z)
+            z = layer(z, dt)
         return z
+
+    def roll_forward(self, z, t):
+        ### here z is the initial position, and t is a tensor of variable times
+        ### this predicts at each of the variable times
+
+        forward_t = lambda dt: self.forward(z, t)
+        preds = torch.vmap(forward_t, out_dims=0)(t)
+        return t, preds
+
 
 
     
