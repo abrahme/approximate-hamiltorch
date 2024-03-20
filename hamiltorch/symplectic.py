@@ -7,11 +7,11 @@ class Symmetric(nn.Module):
     def forward(self, X):
         return X.triu() + X.triu(1).transpose(-1, -2)
 
-class LASymplecticBlock(nn.Module):
+class SymplecticLinearBlock(nn.Module):
 
     def __init__(self, dim, channels: int) -> None:
         #### dim is the size of the space of the input space 2*D D = param space
-        super(LASymplecticBlock, self).__init__()
+        super(SymplecticLinearBlock, self).__init__()
         assert (dim % 2) == 0
         assert (channels % 2) == 0
         self.dim = dim
@@ -19,7 +19,7 @@ class LASymplecticBlock(nn.Module):
 
         self.bias = nn.Parameter(torch.ones(self.dim))
         self.channels = channels
-        self.A = [nn.Linear(self.param_dim,self.param_dim, bias = False) for _ in range(self.channels)]
+        self.A = nn.ModuleList([nn.Linear(self.param_dim,self.param_dim, bias = False) for _ in range(self.channels)])
         for layer in self.A:
             parametrize.register_parametrization(layer, "weight", parametrization=Symmetric())
     
@@ -29,7 +29,7 @@ class LASymplecticBlock(nn.Module):
         
         final_result = torch.matmul(z,torch.eye(self.dim))
         for layer in self.A:
-            q, p = torch.hsplit(final_result, (self.dim, 2), -1)
+            q, p = torch.split(final_result, (self.dim, 2), -1)
             if mode == "up":
                 final_result = torch.cat([q + layer(p), p], -1)
                 mode = "down"
@@ -38,9 +38,9 @@ class LASymplecticBlock(nn.Module):
                 mode = "up" ### alternate modes
         return final_result + self.bias
 
-class SympActivation(nn.Module):
+class SymplecticActivation(nn.Module):
     def __init__(self, dim: int, mode: str) -> None:
-        super(SympActivation, self).__init__()
+        super(SymplecticActivation, self).__init__()
         assert (dim % 2) == 0
         self.dim = dim
         self.mode = mode
@@ -59,15 +59,28 @@ class SympActivation(nn.Module):
             return z
 
 
+class LASymplecticBlock(nn.Module):
+    def __init__(self, dim, activation_mode: str = "up", channels:int = 4) -> None:
+        super(LASymplecticBlock, self).__init__()
+        self.linear_block = SymplecticLinearBlock(dim = dim, channels=channels)
+        self.activation_block = SymplecticActivation(dim = dim, mode = activation_mode)
+
+    def forward(self, z) -> torch.Tensor:
+        return self.activation_block(self.linear_block(z))
+
+
+class SymplecticNeuralNetwork(nn.Module):
+    def __init__(self, dim, activation_modes: list[str], channels: list[int]) -> None:
+        super(SymplecticNeuralNetwork, self).__init__()
+        self.layers = nn.ModuleList([LASymplecticBlock(dim, activation_mode, channel) for (activation_mode, channel) in zip (activation_modes, channels)])
+    def forward(self, z) -> torch.Tensor:
+        for layer in self.layers:
+            z = layer(z)
+        return z
+
+
     
 
         
-class GSymplecticBlock(nn.Module):
-    def __init__(self, dim, mode: str) -> None:
-        assert (dim % 2) == 0
-        assert (mode in ["low", "up"])
-        super(GSymplecticBlock, self).__init__()
-        self.param_dim = dim // 2
-        self.dim = dim
-        self.mode = mode
+
 
