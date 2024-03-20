@@ -4,6 +4,7 @@ import torch.nn as nn
 from typing import Union
 from torch.autograd import grad
 from torchdyn.core import NeuralODE
+from .symplectic import SymplecticNeuralNetwork, GSymplecticNeuralNetwork
 
 
 class EarlyStopper:
@@ -71,10 +72,9 @@ class RMHNNEnergyDeriv(nn.Module):
         self.potential_deriv = NNgHMC(input_dim = self.input_dim, output_dim=self.input_dim, hidden_dim=self.hidden_dim)
     def forward(self, x, *args, **kwargs):
         n = self.input_dim  ### here it is both p, q concatenated
-        state_space = x[..., :n] 
-        dH = self.potential_deriv(state_space)
+        dH = self.potential_deriv(x)
         dHdq, dHdp = dH[..., : n // 2], dH[..., n // 2: ]
-        return  torch.cat([dHdp, -dHdq], - 1)
+        return  torch.cat([1*dHdp, -dHdq], - 1)
 
 
 class PotentialFunction(nn.Module):
@@ -239,7 +239,7 @@ class RMHNN(nn.Module):
         with torch.set_grad_enabled(True): 
             x = x.requires_grad_(True)
             gradH = grad(self.H(x).sum(), x, create_graph=True)[0]
-        return torch.cat([gradH[..., n:2*n], -gradH[..., :n]], -1).to(x)
+        return torch.cat([gradH[..., n:], -gradH[..., :n]], -1).to(x)
 
 class HNNODE(nn.Module):
     def __init__(self, odefunc: Union[HNN,HNNEnergyDeriv], sensitivity="adjoint", solver="dopri5", atol=1e-3, rtol=1e-3) -> None:
@@ -332,6 +332,52 @@ def train_ode(model: nn.Module, X, y, t,  epochs = 10, lr = .01, loss_type = "l2
             gradient_loss = 0.0
 
 
+        total_loss = gradient_loss + loss
+        # if early_stopper.early_stop(total_loss):             
+        #         break
+        # Before the backward pass, use the optimizer object to zero all of the
+        # gradients for the variables it will update (which are the learnable
+        # weights of the model). This is because by default, gradients are
+        # accumulated in buffers( i.e, not overwritten) whenever .backward()
+        # is called. Checkout docs of torch.autograd.backward for more details.
+        optimizer.zero_grad()
+
+        # Backward pass: compute gradient of the loss with respect to model
+        # parameters
+        total_loss.backward()
+
+        # Calling the step function on an Optimizer makes an update to its
+        # parameters
+        optimizer.step()
+    return model, epoch
+
+
+
+def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwork], X, y, t, epochs = 10, lr = .01, loss_type = "l2", gradient_traj = None):
+    # early_stopper = EarlyStopper(patience = 10)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    print("Training Surrogate ODE Model")
+     # Compute and print loss.
+    dims = y.shape[-1]
+    if loss_type == "l2":
+        loss_func = nn.MSELoss()
+        
+    else:
+        raise ValueError
+    for epoch in range(epochs):
+        _, y_pred = model.forward(X, t)
+        loss = loss_func(torch.swapaxes(y_pred, 0, 1)[..., :dims], y)
+        if gradient_traj is not None:
+            observed_flattened = torch.flatten(gradient_traj, end_dim = -2)
+            input_flattened = torch.flatten(y, end_dim = -2)
+            dt = torch.zeros(1).requires_grad_(True)
+            gradH = grad(model.step(input_flattened, dt).sum(), dt, create_graph=True)[0]
+            gradient_loss = loss_func(gradH[..., : dims // 2], observed_flattened)
+        else:
+            gradient_loss = 0.0
+        if epoch % 100 == 0:
+            print(f"Trajectory Loss: {loss}")
+        # print(f"Gradient Loss: {gradient_loss}")
         total_loss = gradient_loss + loss
         # if early_stopper.early_stop(total_loss):             
         #         break
