@@ -84,7 +84,7 @@ class SymplecticNeuralNetwork(nn.Module):
         ### here z is the initial position, and t is a tensor of variable times
         ### this predicts at each of the variable times
 
-        forward_t = lambda dt: self.forward(z, t)
+        forward_t = lambda t: self.forward(z, t)
         preds = torch.vmap(forward_t, out_dims=0)(t)
         return t, preds
 
