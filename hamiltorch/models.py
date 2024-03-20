@@ -4,7 +4,7 @@ import torch.nn as nn
 from typing import Union
 from torch.autograd import grad
 from torchdyn.core import NeuralODE
-from .symplectic import SymplecticNeuralNetwork
+from .symplectic import SymplecticNeuralNetwork, GSymplecticNeuralNetwork
 
 
 class EarlyStopper:
@@ -353,7 +353,7 @@ def train_ode(model: nn.Module, X, y, t,  epochs = 10, lr = .01, loss_type = "l2
 
 
 
-def train_symplectic(model: SymplecticNeuralNetwork, X, y, t, epochs = 10, lr = .01, loss_type = "l2", gradient_traj = None):
+def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwork], X, y, t, epochs = 10, lr = .01, loss_type = "l2", gradient_traj = None):
     # early_stopper = EarlyStopper(patience = 10)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print("Training Surrogate ODE Model")

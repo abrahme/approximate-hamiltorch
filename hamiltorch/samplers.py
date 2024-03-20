@@ -3,7 +3,8 @@ import torch.nn as nn
 from enum import Enum
 from numpy import pi
 from . import util
-from .models import NNgHMC, HNNODE, HNN, train, train_ode,train_symplectic, RMHNNEnergyExplicit,HNNEnergyExplicit, HNNEnergyDeriv, NNODEgHMC, NNODEgRMHMC, RMHNN, RMHNNODE, RMHNNEnergyDeriv, SymplecticNeuralNetwork
+from .models import NNgHMC, HNNODE, HNN, train, train_ode,train_symplectic, RMHNNEnergyExplicit,HNNEnergyExplicit, HNNEnergyDeriv, NNODEgHMC, NNODEgRMHMC, RMHNN, RMHNNODE, RMHNNEnergyDeriv
+from .symplectic import GSymplecticNeuralNetwork, SymplecticNeuralNetwork
 
 # Docstring:
 # https://numpydoc.readthedocs.io/en/latest/format.html#docstring-standard
@@ -1526,14 +1527,8 @@ def sample_neural_ode_surrogate_hmc(log_prob_func, params_init, num_samples = 10
         return list(map(lambda t: t.detach(), ret_params)), 1 - num_rejected/num_samples, fitted_model
     else:
         return list(map(lambda t: t.detach(), ret_params)), fitted_model
-    
 
-
-
-
-
-
-def sample_symplectic_nn_surrogate_hmc(log_prob_func, params_init, num_samples = 10, num_steps_per_sample = 10, step_size = 0.1, burn = 0, model_type = "", debug = False, store_on_GPU = True, pass_grad = None, verbose = True, solver = "dopri5", sensitivity="adjoint"):
+def sample_symplectic_nn_surrogate_hmc(log_prob_func, params_init, num_samples = 10, num_steps_per_sample = 10, step_size = 0.1, burn = 0, model_type = "LA", debug = False, store_on_GPU = True, pass_grad = None, verbose = True):
     """ This is the main sampling function of hamiltorch. Most samplers are built on top of this class. This function receives a function handle log_prob_func,
         which the sampler will use to evaluate the log probability of each sample. A log_prob_func must take a 1-d vector of length equal to the number of parameters that are being
         sampled.
@@ -1680,8 +1675,8 @@ def sample_symplectic_nn_surrogate_hmc(log_prob_func, params_init, num_samples =
     t = torch.linspace(start = 0, end = num_steps_per_sample*step_size, steps=num_steps_per_sample)
     dims = X.shape[1]
     # gradient_traj=torch.stack(grad_trajectories, axis = 0).detach())
-    model = SymplecticNeuralNetwork(dim = dims, activation_modes=["up","down"], channels=[8,8] )
-    fitted_model, _ = train_symplectic(model, X.detach(), y.detach(), t,  epochs = 5000)
+    model = SymplecticNeuralNetwork(dim = dims, activation_modes=["up","down"], channels=[8,8]) if model_type =="LA" else GSymplecticNeuralNetwork(dim = dims, activation_modes=["up","down"], widths=[dims*50, dims*50])
+    fitted_model, _ = train_symplectic(model, X.detach(), y.detach(), t,  epochs = 500)
     print(f"Took {_} epochs")
     for n in range(num_samples - burn):
         if verbose:

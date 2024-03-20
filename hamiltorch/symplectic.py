@@ -98,8 +98,62 @@ class SymplecticNeuralNetwork(nn.Module):
 
 
 
+class GSymplecticBlock(nn.Module):
+    def __init__(self, dim: int, width: int, mode: str) -> None:
+        super(GSymplecticBlock, self).__init__()
+        assert (dim % 2) == 0
+        assert (mode in ["up", "down"])
+        self.dim = dim
+        self.mode = mode
+        self.param_dim = dim // 2
+        self.n = width
+        self.K = nn.Parameter(torch.zeros(self.n, self.param_dim))
+        self.a = nn.Parameter(torch.zeros(self.n))
+        self.activation = nn.SiLU()
+        self.bias = nn.Parameter(torch.zeros(self.n))
+
+        ### initialize
+        nn.init.normal_(self.a)
+        nn.init.normal_(self.bias)
+        nn.init.orthogonal_(self.K)
+    
+    def forward(self, z, dt):
+        q, p = torch.hsplit(z, 2)
+        pre_activation_term = torch.matmul(torch.transpose(self.K, 0, 1), torch.diag(self.a))
+        if self.mode == "up":
+            post_activation_term = self.activation(torch.einsum("ik,...k->...i",self.K, q) + self.bias)
+            return torch.cat([q, dt*torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term) + p], -1)
+        elif self.mode == "down":
+            post_activation_term = self.activation(torch.einsum("ik,...k->...i",self.K, p) + self.bias)
+            return torch.cat([q + dt * torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term), p], -1)
+
+        else:
+            return z
+
+class GSymplecticNeuralNetwork(nn.Module):
+    def __init__(self, dim, activation_modes: list[str], widths: list[int]) -> None:
+        super(GSymplecticNeuralNetwork, self).__init__()
+        self.layers = nn.ModuleList([GSymplecticBlock(dim, width, activation_mode ) for (width, activation_mode) in zip (widths, activation_modes)])
+    
+    def step(self, z, dt) -> torch.Tensor:
+        for layer in self.layers:
+            z = layer(z, dt)
+        return z
+
+    def forward(self, z, t):
+        ### here z is the initial position, and t is a tensor of variable times
+        ### this predicts at each of the variable time
+        
+        # forward_t = lambda t: self.step(z, t)
+        # preds = torch.vmap(forward_t, out_dims=0)(t)
+        dts = torch.diff(t, prepend = torch.zeros(1))
+        preds = []
+        for dt in dts:
+            z = self.step(z, dt)
+            preds.append(z)
+        return t, torch.stack(preds,axis=0)
+
     
 
-        
 
 

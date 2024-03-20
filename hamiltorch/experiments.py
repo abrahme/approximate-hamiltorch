@@ -77,11 +77,17 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
 
     elif model_type == "SymplecticNNgHMC":
         params_hmc_surrogate_symplectic_nnghmc, surrogate_symplectic_nnghmc = hamiltorch.sample_symplectic_nn_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "", sensitivity=sensitivity, solver = solver
-                                                  )
+                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "LA")
         gradient_func = None
 
         return params_hmc_surrogate_symplectic_nnghmc, surrogate_symplectic_nnghmc, gradient_func
+    elif model_type == "GSymplecticNNgHMC":
+        params_hmc_surrogate_gsymplectic_nnghmc, surrogate_gsymplectic_nnghmc = hamiltorch.sample_symplectic_nn_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
+                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "Gradient")
+                                                
+        gradient_func = None
+
+        return params_hmc_surrogate_gsymplectic_nnghmc, surrogate_gsymplectic_nnghmc, gradient_func
 
 
 
@@ -142,7 +148,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
     distributions = ["banana", "gaussian", "high_dimensional_gaussian", "normal_normal"]
     sensitivities = ["autograd"]
     solvers = ["SynchronousLeapfrog"]
-    models = ["SymplecticNNgHMC", "HMC", "NNgHMC", "Explicit NNODEgHMC", "NNODEgHMC"]
+    models = ["GSymplecticNNgHMC","SymplecticNNgHMC", "HMC", "NNgHMC", "Explicit NNODEgHMC", "NNODEgHMC"]
     percent_of_warmup = np.linspace(0.1, 1, 10)
     error_list = []
     for percent in percent_of_warmup:
