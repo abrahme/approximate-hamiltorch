@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
 import hamiltorch
 
+device = torch.device("mps") if torch.backends.mps.is_available() else "cpu"
+
 def gaussian_log_prob(omega):
-    mean = torch.tensor([0.,0.,0.])
-    stddev = torch.tensor([.5,1.,2.]) 
+    mean = torch.tensor([0.,0.,0.]).to(device)
+    stddev = torch.tensor([.5,1.,2.]).to(device)
     ll = torch.distributions.MultivariateNormal(mean, torch.diag(stddev**2)).log_prob(omega)
     return ll.sum()
 
@@ -25,6 +27,12 @@ def normal_normal_conjugate(w):
     ll += torch.distributions.InverseGamma(2, 3).log_prob(sigma)
     ll += torch.distributions.Normal(1.7, sigma).log_prob(w[0])
 
+    return ll.sum()
+
+def high_dimensional_warped_gaussian_log_prob(w, D, scales):
+    mean = torch.zeros(D).to(device)
+    cov = torch.diag(scales).to(device)
+    ll = torch.distributions.MultivariateNormal(mean, covariance_matrix=cov).log_prob(w)
     return ll.sum()
     
 
@@ -71,3 +79,21 @@ def params_grad(p, log_prob_func):
     p = p.requires_grad_(True)
     grad = grad(log_prob_func(p), p, create_graph=False)[0]
     return grad
+
+
+def compute_analytical_hamiltonian_path_gaussian(hamiltonian: torch.Tensor, step_size: float, L: int, a: torch.Tensor, b: torch.tensor) -> torch.Tensor:
+    """
+    computes analytical hamiltonian solutions of the form p^2/a^2 + q^2/b^2 = 1. 
+    """
+
+    t = torch.linspace(0, end=L*step_size, steps=L)
+    new_a = torch.sqrt(hamiltonian * a * 2)
+    new_b = torch.sqrt(hamiltonian * b * 2)
+    return torch.hstack([torch.outer(torch.cos(t),new_a),  torch.outer(torch.sin(t), new_b)])
+
+def compute_analytical_hamiltonian_gradient_gaussian(hamiltonian: torch.Tensor, step_size: float, L: int, a: torch.Tensor, b: torch.tensor) -> torch.Tensor:
+    t = torch.linspace(0, end=L*step_size, steps=L)
+    new_a = torch.sqrt(hamiltonian * a * 2)
+    new_b = torch.sqrt(hamiltonian * b * 2)
+    return torch.hstack([-torch.outer(torch.sin(t),new_a),  torch.outer(torch.cos(t), new_b)])
+
