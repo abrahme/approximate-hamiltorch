@@ -2,11 +2,11 @@ import torch
 import numpy as np
 import hamiltorch
 import arviz as az
-from hamiltorch.samplers import leapfrog
+from hamiltorch.hmc import HMC, HMCGaussianAnalytic, SymplecticHMC, SurrogateGradientHMC, SurrogateNeuralODEHMC
 from hamiltorch.ode import SynchronousLeapfrog
-from hamiltorch.plot_utils import plot_results, plot_reversibility, plot_samples
+from hamiltorch.plot_utils import plot_reversibility, plot_samples
 from hamiltorch.experiment_utils import banana_log_prob, gaussian_log_prob, high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad, normal_normal_conjugate, compute_hamiltonian_error
-from arviz import ess, autocorr
+from arviz import ess
 import pandas as pd
 import time
 
@@ -44,50 +44,53 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
     if solver == "SynchronousLeapfrog":
         solver = SynchronousLeapfrog()
     if model_type == "HMC":
-        params_hmc = hamiltorch.sample(log_prob_func=log_prob, params_init=params_init, num_samples=N,
-                               step_size=step_size, num_steps_per_sample=L, burn = int(burn*percent))
-
-        model = lambda x, t: (None, torch.cat([torch.stack(item,0) for item in 
-                                               leapfrog(x[..., :dim], x[..., dim:], log_prob_func=log_prob,steps = t.shape[0], 
-                                                        step_size=step_size)], -1))
+        sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim)
+        params_hmc, _, _, _ = sampler.sample(q_init=params_init, grad_func=None, num_samples=int(burn*percent)) ## burn-in
+        params_hmc, _, _, _ = sampler.sample(q_init=params_hmc[-1, -1, :], grad_func=None, num_samples= N - int(burn*percent))
+        def model_func(x, t):
+            step_results = sampler.step(x[..., :dim], x[..., dim:])
+            return (None, torch.cat([step_results[0], step_results[1]], -1))
         gradient_func = experiment_params["grad_func"]
-        return params_hmc, model, gradient_func
+        return params_hmc, model_func, gradient_func
     elif model_type == "NNgHMC":
-        params_hmc_surrogate, surrogate_model = hamiltorch.sample_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent),
-                                                  desired_accept_rate=0.8)
-        model = lambda x, t: (None, torch.cat([torch.stack(item,0) for item in 
-                                               leapfrog(x[..., :dim], x[..., dim:], log_prob_func=log_prob,steps = t.shape[0], 
-                                                        step_size=step_size, pass_grad=surrogate_model)], -1))
-        return params_hmc_surrogate, model, surrogate_model
-    elif model_type == "NNODEgHMC":
-        params_hmc_surrogate_ode_nnghmc, surrogate_model_ode_nnghmc = hamiltorch.sample_neural_ode_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "", sensitivity=sensitivity, solver = solver
-                                                  )
-        gradient_func = surrogate_model_ode_nnghmc.odefunc
-        return params_hmc_surrogate_ode_nnghmc, surrogate_model_ode_nnghmc, gradient_func
-    elif model_type == "Explicit NNODEgHMC":
-        params_hmc_surrogate_ode_explicit, surrogate_model_ode_explicit = hamiltorch.sample_neural_ode_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn*percent), model_type = "explicit_hamiltonian", 
-                                                  sensitivity=sensitivity, solver = solver
-                                                  )
-        gradient_func = surrogate_model_ode_explicit.odefunc
+        sampler = SurrogateGradientHMC(step_size=step_size, L=L, log_prob_func=log_prob, base_sampler=HMC)
+        sampler.create_surrogate(q_init=params_init, burn=int(burn*percent), epochs=100)
+        params_hmc_surrogate, _, _, _ = sampler.sample(q_init=params_hmc_surrogate[-1, -1, :], num_samples = N - int(burn*percent))
+        
+        def model_func(x, t):
+            step_results = sampler.step(x[..., :dim], x[..., dim:])
+            return (None, torch.cat([step_results[0], step_results[1]], -1))
 
-        return params_hmc_surrogate_ode_explicit, surrogate_model_ode_explicit, gradient_func
+        return params_hmc_surrogate, model_func, sampler.model
+    elif model_type == "NNODEgHMC":
+        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="")
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100, solver=solver, sensitivity=sensitivity)
+        params_hmc_surrogate_ode_nnghmc, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
+        gradient_func = sampler.model.odefunc
+        return params_hmc_surrogate_ode_nnghmc, sampler.model, gradient_func
+    elif model_type == "Explicit NNODEgHMC":
+        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="explicit_hamiltonian")
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100, solver=solver, sensitivity=sensitivity)
+        params_hmc_surrogate_ode_explicit, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
+        gradient_func = sampler.model.odefunc
+        return params_hmc_surrogate_ode_explicit, sampler.model, gradient_func
 
     elif model_type == "SymplecticNNgHMC":
-        params_hmc_surrogate_symplectic_nnghmc, surrogate_symplectic_nnghmc = hamiltorch.sample_symplectic_nn_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "LA")
+        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="LA")
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
+        params_hmc_surrogate_symplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
+
         gradient_func = None
 
-        return params_hmc_surrogate_symplectic_nnghmc, surrogate_symplectic_nnghmc, gradient_func
+        return params_hmc_surrogate_symplectic_nnghmc, sampler.model, gradient_func
     elif model_type == "GSymplecticNNgHMC":
-        params_hmc_surrogate_gsymplectic_nnghmc, surrogate_gsymplectic_nnghmc = hamiltorch.sample_symplectic_nn_surrogate_hmc(log_prob_func=log_prob, params_init=params_init,
-                                                  num_samples=N,step_size=step_size,num_steps_per_sample=L,burn=int(burn * percent), model_type = "Gradient")
+        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="GSymp")
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
+        params_hmc_surrogate_gsymplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
                                                 
         gradient_func = None
 
-        return params_hmc_surrogate_gsymplectic_nnghmc, surrogate_gsymplectic_nnghmc, gradient_func
+        return params_hmc_surrogate_gsymplectic_nnghmc, sampler.model, gradient_func
 
 
 

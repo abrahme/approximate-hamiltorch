@@ -166,8 +166,6 @@ class HMC(HMCBase):
         return torch.stack(param_trajectories,axis=0), torch.stack(momentum_trajectories,axis=0), torch.stack(gradient_trajectories,axis=0), torch.Tensor(accepted)
     
 
-            
-
 class HMCGaussianAnalytic(HMC):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, a:torch.Tensor):
         super().__init__(step_size, L, log_prob_func, dim)
@@ -198,12 +196,16 @@ class HMCGaussianAnalytic(HMC):
 
         return leapfrog_params, leapfrog_momenta, -gradient_momenta
     
+    def sample(self, q_init, grad_func=None, num_samples=1000):
+        return super().sample(q_init, grad_func, num_samples)
+    
 
 class SurrogateHMCBase(HMCBase):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic]):
         super().__init__(step_size, L, log_prob_func, dim)
         self.base_sampler = base_sampler
         self.model = None
+        self.burn_state = None
 
     @abstractmethod
     def create_surrogate(self, *args, **kwargs):
@@ -217,15 +219,15 @@ class SurrogateGradientHMC(SurrogateHMCBase):
         param_examples, _, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model =  NNgHMC(input_dim = self.dim, output_dim = self.dim, hidden_dim =  100 * self.dim)
         self.model, _ = train(model, torch.flatten(param_examples, end_dim=1), torch.flatten(grad_examples, end_dim=1), epochs=epochs)
-    
+        self.burn_state = param_examples[-1, -1, :]
 
     def step(self, q, p):
         if self.model is None:
             raise ValueError("Surrogate model is not fit")
         return super().step(q, p, grad_func = self.model)
     
-    def sample(self, q_init, num_samples=1000):
-        return super().sample(q_init, self.model, num_samples)
+    def sample(self, q_init = None, num_samples=1000):
+        return super().sample(self.burn_state if q_init is None else q_init, self.model, num_samples)
     
 
 class SurrogateNeuralODEHMC(SurrogateHMCBase):
@@ -244,6 +246,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                                     t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
                                     epochs=epochs, 
                                     gradient_traj=torch.stack(grad_examples, axis = 0).detach())
+        self.burn_state = param_examples[-1, -1, :]
         
     def step(self, q, p):
         if self.model is None:
@@ -256,12 +259,13 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         return leapfrog_values[...,:self.dim], leapfrog_values[...,self.dim:]
         
     
-    def sample(self, q_init, num_samples=1000):
+    def sample(self, q_init = None, num_samples=1000):
 
         """
         returns all trajectories for parameter, momentum, gradient, as well as if sample was accepted
         
         """
+        q_init = self.burn_state if q_init is None else q_init
         device = q_init.device
         params = q_init.clone().requires_grad_()
         param_burn_prev = q_init.clone()
@@ -316,6 +320,13 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
                                   y = torch.cat([param_examples, momenta_examples], dim = 2),
                                     t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
                                     epochs=epochs)
+        self.burn_state = param_examples[-1, -1, :]
+    
+    def step(self, q, p):
+        return super().step(q, p)
+    
+    def sample(self, q_init=None, num_samples=1000):
+        return super().sample(q_init, num_samples)
     
 
 

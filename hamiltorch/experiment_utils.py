@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import hamiltorch
 
 device = torch.device("mps") if torch.backends.mps.is_available() else "cpu"
 
@@ -81,19 +80,5 @@ def params_grad(p, log_prob_func):
     return grad
 
 
-def compute_analytical_hamiltonian_path_gaussian(hamiltonian: torch.Tensor, step_size: float, L: int, a: torch.Tensor, b: torch.tensor) -> torch.Tensor:
-    """
-    computes analytical hamiltonian solutions of the form p^2/a^2 + q^2/b^2 = 1. 
-    """
 
-    t = torch.linspace(0, end=L*step_size, steps=L)
-    new_a = torch.sqrt(hamiltonian * a * 2)
-    new_b = torch.sqrt(hamiltonian * b * 2)
-    return torch.hstack([torch.outer(torch.cos(t),new_a),  torch.outer(torch.sin(t), new_b)])
-
-def compute_analytical_hamiltonian_gradient_gaussian(hamiltonian: torch.Tensor, step_size: float, L: int, a: torch.Tensor, b: torch.tensor) -> torch.Tensor:
-    t = torch.linspace(0, end=L*step_size, steps=L)
-    new_a = torch.sqrt(hamiltonian * a * 2)
-    new_b = torch.sqrt(hamiltonian * b * 2)
-    return torch.hstack([-torch.outer(torch.sin(t),new_a),  torch.outer(torch.cos(t), new_b)])
 
