@@ -55,8 +55,8 @@ class HMCBase(ABC):
     def hamiltonian(self, q, p):
         return -self.log_prob_func(q) + .5 * torch.square(p).sum()
     
-    @abstractmethod
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+    @classmethod
+    def metropolis_accept_step(cls, hamiltonian_old, hamiltonian_new):
         rho = min(0., float(-hamiltonian_new + hamiltonian_old))
         if rho >= torch.log(torch.rand(1)):
             return True
@@ -98,7 +98,7 @@ class HMC(HMCBase):
         ret_grad = []
         p += 0.5 * self.step_size * self.params_grad(q, grad_func)
         for n in range(self.L):
-            params = params + self.step_size * p #/normalizing_const
+            q = q + self.step_size * p #/normalizing_const
             p_grad = self.params_grad(q, grad_func)
             p += self.step_size * p_grad
             ret_params.append(q.clone())
@@ -119,9 +119,6 @@ class HMC(HMCBase):
     
     def gibbs(self):
         return super().gibbs()
-    
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
     
     def hamiltonian(self, q, p):
         return super().hamiltonian(q, p)
@@ -217,8 +214,6 @@ class HMCGaussianAnalytic(HMC):
     def gibbs(self):
         return super().gibbs()
     
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
     
 
 class SurrogateHMCBase(HMCBase):
@@ -236,7 +231,7 @@ class SurrogateHMCBase(HMCBase):
         return super().params_grad(*args, **kwargs)
     
     def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
+        return super().metropolis_accept_step(hamiltonian_old, hamiltonian_new)
     
     def gibbs(self):
         return super().gibbs()
@@ -272,7 +267,7 @@ class SurrogateGradientHMC(SurrogateHMCBase):
         return super().gibbs()
     
     def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
+        return super().metropolis_accept_step(hamiltonian_old, hamiltonian_new)
     
 
 class SurrogateNeuralODEHMC(SurrogateHMCBase):
@@ -297,7 +292,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         if self.model is None:
             raise ValueError("Surrogate model is not fit")
         
-        initial_positions = torch.cat(q,p)[None,...]
+        initial_positions = torch.cat([q,p])[None,...]
         t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L)
         with torch.no_grad():
             _, leapfrog_values = self.model.forward(initial_positions, t)
@@ -369,7 +364,7 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler, model_type)
 
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
-        param_examples, momenta_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
+        param_examples, momenta_examples, _, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model = SymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], channels=[8,8]) if self.model_type =="LA" else GSymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], widths=[self.dim*100, self.dim * 100])
 
         self.model, _ = train_symplectic(model, 
