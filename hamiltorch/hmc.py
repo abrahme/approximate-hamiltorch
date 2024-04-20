@@ -43,19 +43,19 @@ def collect_gradients(log_prob, params, pass_grad = None):
 class HMCBase(ABC):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int):
         self.step_size = step_size
-        self.num_steps = L
+        self.L = L
         self.log_prob_func = log_prob_func
         self.dim = dim
 
-    @staticmethod
+    @abstractmethod
     def gibbs(self):
         return torch.distributions.Normal(torch.zeros(self.dim), torch.ones(self.dim)).sample()
     
-    @classmethod
+    @abstractmethod
     def hamiltonian(self, q, p):
         return -self.log_prob_func(q) + .5 * torch.square(p).sum()
     
-    @staticmethod
+    @abstractmethod
     def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
         rho = min(0., float(-hamiltonian_new + hamiltonian_old))
         if rho >= torch.log(torch.rand(1)):
@@ -113,9 +113,18 @@ class HMC(HMCBase):
         q = q.detach().requires_grad_()
         log_prob = self.log_prob_func(q)
         q = collect_gradients(log_prob, q, pass_grad)
-        if torch.mps.is_available():
+        if torch.backends.mps.is_available():
             torch.mps.empty_cache()
         return q.grad
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
 
     def sample(self, q_init, grad_func = None, num_samples=1000):
 
@@ -182,7 +191,7 @@ class HMCGaussianAnalytic(HMC):
         new_b = torch.sqrt(hamiltonian * b * 2)
         return torch.hstack([torch.outer(torch.cos(t),new_a),  torch.outer(torch.sin(t), new_b)])
 
-    def compute_analytical_hamiltonian_gradient_gaussian(self,hamiltonian: torch.Tensor,  a: torch.Tensor) -> torch.Tensor:
+    def compute_analytical_hamiltonian_gradient_gaussian(self, hamiltonian: torch.Tensor,  a: torch.Tensor) -> torch.Tensor:
         b = torch.ones(self.dim)
         t = torch.linspace(0, end=self.L*self.step_size, steps=self.L)
         new_a = torch.sqrt(hamiltonian * a * 2)
@@ -198,6 +207,18 @@ class HMCGaussianAnalytic(HMC):
     
     def sample(self, q_init, grad_func=None, num_samples=1000):
         return super().sample(q_init, grad_func, num_samples)
+
+    def params_grad(self, q, pass_grad):
+        raise NotImplementedError
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
     
 
 class SurrogateHMCBase(HMCBase):
@@ -210,6 +231,18 @@ class SurrogateHMCBase(HMCBase):
     @abstractmethod
     def create_surrogate(self, *args, **kwargs):
         raise NotImplementedError
+    
+    def params_grad(self, *args, **kwargs):
+        return super().params_grad(*args, **kwargs)
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
 
 class SurrogateGradientHMC(SurrogateHMCBase):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic] ):
@@ -228,6 +261,18 @@ class SurrogateGradientHMC(SurrogateHMCBase):
     
     def sample(self, q_init = None, num_samples=1000):
         return super().sample(self.burn_state if q_init is None else q_init, self.model, num_samples)
+    
+    def params_grad(self, *args, **kwargs):
+        return super().params_grad(*args, **kwargs)
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
     
 
 class SurrogateNeuralODEHMC(SurrogateHMCBase):
@@ -305,6 +350,18 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         util.progress_bar_end('Acceptance Rate {:.2f}'.format(1 - num_rejected/num_samples)) #need to adapt for burn
 
         return torch.stack(param_trajectories,axis=0), torch.stack(momentum_trajectories,axis=0), None, torch.Tensor(accepted)
+    
+    def params_grad(self, *args, **kwargs):
+        return super().params_grad(*args, **kwargs)
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
 
     
 class SymplecticHMC(SurrogateNeuralODEHMC):
@@ -327,6 +384,18 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
     
     def sample(self, q_init=None, num_samples=1000):
         return super().sample(q_init, num_samples)
+    
+    def params_grad(self, *args, **kwargs):
+        return super().params_grad(*args, **kwargs)
+    
+    def gibbs(self):
+        return super().gibbs()
+    
+    def hamiltonian(self, q, p):
+        return super().hamiltonian(q, p)
+    
+    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
+        return super().metropolis_accept_step(hamiltonian_new)
     
 
 
