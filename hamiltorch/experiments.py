@@ -30,7 +30,7 @@ experiment_hyperparams = {
 }
 
 
-def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
+def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, is_analytic = False, a = None):
     hamiltorch.set_random_seed(123)
     print(f"Running experiment for: solver: {solver}, sensitivity: {sensitivity}, distribution: {distribution}, model: {model_type}")
     experiment_params = experiment_hyperparams[distribution]
@@ -44,7 +44,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
     if solver == "SynchronousLeapfrog":
         solver = SynchronousLeapfrog()
     if model_type == "HMC":
-        sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim)
+        sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
         params_hmc, _, _, _ = sampler.sample(q_init=params_init, grad_func=None, num_samples=int(burn*percent)) ## burn-in
         params_hmc, _, _, _ = sampler.sample(q_init=params_hmc[-1, -1, :], grad_func=None, num_samples= N - int(burn*percent))
         def model_func(x, t):
@@ -53,7 +53,8 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
         gradient_func = experiment_params["grad_func"]
         return params_hmc, model_func, gradient_func
     elif model_type == "NNgHMC":
-        sampler = SurrogateGradientHMC(step_size=step_size, L=L, log_prob_func=log_prob, base_sampler=HMC)
+        base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
+        sampler = SurrogateGradientHMC(step_size=step_size, L=L, log_prob_func=log_prob, base_sampler=base_sampler)
         sampler.create_surrogate(q_init=params_init, burn=int(burn*percent), epochs=100)
         params_hmc_surrogate, _, _, _ = sampler.sample(q_init=params_hmc_surrogate[-1, -1, :], num_samples = N - int(burn*percent))
         
@@ -63,20 +64,23 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
 
         return params_hmc_surrogate, model_func, sampler.model
     elif model_type == "NNODEgHMC":
-        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="")
+        base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
+        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="")
         sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100, solver=solver, sensitivity=sensitivity)
         params_hmc_surrogate_ode_nnghmc, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
         gradient_func = sampler.model.odefunc
         return params_hmc_surrogate_ode_nnghmc, sampler.model, gradient_func
     elif model_type == "Explicit NNODEgHMC":
-        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="explicit_hamiltonian")
+        base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
+        sampler = SurrogateNeuralODEHMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="explicit_hamiltonian")
         sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100, solver=solver, sensitivity=sensitivity)
         params_hmc_surrogate_ode_explicit, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
         gradient_func = sampler.model.odefunc
         return params_hmc_surrogate_ode_explicit, sampler.model, gradient_func
 
     elif model_type == "SymplecticNNgHMC":
-        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="LA")
+        base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
+        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="LA")
         sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
         params_hmc_surrogate_symplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
 
@@ -84,7 +88,8 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1):
 
         return params_hmc_surrogate_symplectic_nnghmc, sampler.model, gradient_func
     elif model_type == "GSymplecticNNgHMC":
-        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=HMC, model_type="GSymp")
+        base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
+        sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="GSymp")
         sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
         params_hmc_surrogate_gsymplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
                                                 
