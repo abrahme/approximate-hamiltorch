@@ -230,9 +230,6 @@ class SurrogateHMCBase(HMCBase):
     def params_grad(self, *args, **kwargs):
         return super().params_grad(*args, **kwargs)
     
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_old, hamiltonian_new)
-    
     def gibbs(self):
         return super().gibbs()
     
@@ -266,9 +263,6 @@ class SurrogateGradientHMC(SurrogateHMCBase):
     def gibbs(self):
         return super().gibbs()
     
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_old, hamiltonian_new)
-    
 
 class SurrogateNeuralODEHMC(SurrogateHMCBase):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic], model_type:str ):
@@ -296,7 +290,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L)
         with torch.no_grad():
             _, leapfrog_values = self.model.forward(initial_positions, t)
-        return leapfrog_values[...,:self.dim], leapfrog_values[...,self.dim:]
+        return torch.squeeze(leapfrog_values[...,:self.dim]), torch.squeeze(leapfrog_values[...,self.dim:])
         
     
     def sample(self, q_init = None, num_samples=1000):
@@ -355,8 +349,6 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
     def hamiltonian(self, q, p):
         return super().hamiltonian(q, p)
     
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
 
     
 class SymplecticHMC(SurrogateNeuralODEHMC):
@@ -389,8 +381,6 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
     def hamiltonian(self, q, p):
         return super().hamiltonian(q, p)
     
-    def metropolis_accept_step(hamiltonian_old, hamiltonian_new):
-        return super().metropolis_accept_step(hamiltonian_new)
     
 
 
