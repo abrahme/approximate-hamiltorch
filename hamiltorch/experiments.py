@@ -54,9 +54,9 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, i
         return params_hmc, model_func, gradient_func
     elif model_type == "NNgHMC":
         base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
-        sampler = SurrogateGradientHMC(step_size=step_size, L=L, log_prob_func=log_prob, base_sampler=base_sampler)
+        sampler = SurrogateGradientHMC(step_size=step_size, L=L, log_prob_func=log_prob, base_sampler=base_sampler, dim=dim)
         sampler.create_surrogate(q_init=params_init, burn=int(burn*percent), epochs=100)
-        params_hmc_surrogate, _, _, _ = sampler.sample(q_init=params_hmc_surrogate[-1, -1, :], num_samples = N - int(burn*percent))
+        params_hmc_surrogate, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
         
         def model_func(x, t):
             step_results = sampler.step(x[..., :dim], x[..., dim:])
@@ -173,7 +173,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         end = time.time()
                         model_dict[model] = {"samples":experiment_samples, "model": experiment_model, "time": end - start}
                         
-                    true_samples = torch.stack(model_dict["HMC"]["samples"], 0)
+                    true_samples = model_dict["HMC"]["samples"]
                     
                     hamiltorch.set_random_seed(1)
                     num_samples = 100

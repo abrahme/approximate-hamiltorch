@@ -216,7 +216,7 @@ class HMCGaussianAnalytic(HMC):
     
     
 
-class SurrogateHMCBase(HMCBase):
+class SurrogateHMCBase(HMC):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic]):
         super().__init__(step_size, L, log_prob_func, dim)
         self.base_sampler = base_sampler
@@ -227,14 +227,20 @@ class SurrogateHMCBase(HMCBase):
     def create_surrogate(self, *args, **kwargs):
         raise NotImplementedError
     
-    def params_grad(self, *args, **kwargs):
-        return super().params_grad(*args, **kwargs)
+    def params_grad(self, q, pass_grad):
+        return super().params_grad(q, pass_grad)
     
     def gibbs(self):
         return super().gibbs()
     
     def hamiltonian(self, q, p):
         return super().hamiltonian(q, p)
+    
+    def sample(self, q_init, grad_func=None, num_samples=1000):
+        return super().sample(q_init, grad_func, num_samples)
+    
+    def step(self, q, p, grad_func=None):
+        return super().step(q, p, grad_func)
 
 class SurrogateGradientHMC(SurrogateHMCBase):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic] ):
@@ -246,16 +252,14 @@ class SurrogateGradientHMC(SurrogateHMCBase):
         self.model, _ = train(model, torch.flatten(param_examples, end_dim=1), torch.flatten(grad_examples, end_dim=1), epochs=epochs)
         self.burn_state = param_examples[-1, -1, :]
 
-    def step(self, q, p):
-        if self.model is None:
-            raise ValueError("Surrogate model is not fit")
-        return super().step(q, p, grad_func = self.model)
+    def step(self, q, p, grad_func):
+        return super().step(q, p, grad_func)
     
     def sample(self, q_init = None, num_samples=1000):
         return super().sample(self.burn_state if q_init is None else q_init, self.model, num_samples)
     
-    def params_grad(self, *args, **kwargs):
-        return super().params_grad(*args, **kwargs)
+    def params_grad(self, q, pass_grad):
+        return super().params_grad(q, pass_grad)
     
     def hamiltonian(self, q, p):
         return super().hamiltonian(q, p)
@@ -279,7 +283,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                                   y = torch.cat([param_examples, momenta_examples], dim = 2),
                                     t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
                                     epochs=epochs, 
-                                    gradient_traj=torch.stack(grad_examples, axis = 0).detach())
+                                    gradient_traj=grad_examples.detach())
         self.burn_state = param_examples[-1, -1, :]
         
     def step(self, q, p):
