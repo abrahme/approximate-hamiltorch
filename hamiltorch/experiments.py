@@ -59,7 +59,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, i
         params_hmc_surrogate, _, _, _ = sampler.sample(q_init=None, num_samples = N - int(burn*percent))
         
         def model_func(x, t):
-            step_results = sampler.step(x[..., :dim], x[..., dim:])
+            step_results = base_sampler.step(x[..., :dim], x[..., dim:], sampler.model)
             return (None, torch.cat([step_results[0], step_results[1]], -1))
 
         return params_hmc_surrogate, model_func, sampler.model
@@ -81,7 +81,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, i
     elif model_type == "SymplecticNNgHMC":
         base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="LA")
-        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 500)
         params_hmc_surrogate_symplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
 
         gradient_func = None
@@ -90,7 +90,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, i
     elif model_type == "GSymplecticNNgHMC":
         base_sampler = HMC(step_size=step_size, L = L, log_prob_func=log_prob, dim=dim) if not is_analytic else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a)
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, base_sampler=base_sampler, model_type="GSymp")
-        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 100)
+        sampler.create_surrogate(q_init=params_init, burn = int(burn*percent), epochs = 500)
         params_hmc_surrogate_gsymplectic_nnghmc, _, _, _ = sampler.sample(num_samples=N-int(burn*percent), q_init=None)
                                                 
         gradient_func = None
@@ -117,9 +117,9 @@ def surrogate_neural_ode_hmc_experiment():
                     experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver)
 
                     end = time.time()
-                    model_dict[model] = {"samples":experiment_samples, "model": experiment_model, "time": end - start}
+                    model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}
                     
-                true_samples = torch.stack(model_dict["HMC"]["samples"], 0)
+                true_samples = model_dict["HMC"]["samples"]
                 
                 hamiltorch.set_random_seed(1)
                 num_samples = 100
@@ -143,7 +143,7 @@ def surrogate_neural_ode_hmc_experiment():
                     error_dict["reversibility_error"] = error
                     error_dict["time"] = model_dict[model]["time"]
                     # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])
-                    error_dict["ess"] = ess(az.convert_to_inference_data(torch.stack(model_dict[model]["samples"],0).numpy()[None, : ,: ])).x.mean().values
+                    error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].numpy()[None, : ,: ])).x.mean().values
                     error_list.append(error_dict)
 
                 plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
@@ -171,7 +171,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent)
 
                         end = time.time()
-                        model_dict[model] = {"samples":experiment_samples, "model": experiment_model, "time": end - start}
+                        model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}
                         
                     true_samples = model_dict["HMC"]["samples"]
                     
@@ -203,7 +203,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         error_dict["reversibility_error"] = error
                         error_dict["time"] = model_dict[model]["time"]
                         # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])
-                        error_dict["ess"] = ess(az.convert_to_inference_data(torch.stack(model_dict[model]["samples"],0).numpy()[None, : ,: ])).x.mean().values
+                        error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].numpy()[None, : ,: ])).x.mean().values
                         error_list.append(error_dict)
 
                     plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
