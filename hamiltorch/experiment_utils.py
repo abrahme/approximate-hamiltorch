@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 
-device = torch.device("mps") if torch.backends.mps.is_available() else "cpu"
 
 def gaussian_log_prob(omega):
     mean = torch.tensor([0.,0.,0.])

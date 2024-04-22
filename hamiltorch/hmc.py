@@ -2,7 +2,7 @@ import torch
 from abc import abstractmethod, ABC
 from . import util
 from typing import Union
-from .models import train, train_ode,train_symplectic,  NNgHMC, HNNEnergyDeriv, HNNEnergyExplicit, HNNODE, HNN, GSymplecticNeuralNetwork, SymplecticNeuralNetwork
+from .models import train, train_ode,train_symplectic,  NNgHMC, HNNEnergyDeriv, HNNEnergyExplicit, HNNODE, HNN, GSymplecticNeuralNetwork, SymplecticNeuralNetwork, create_training_set_symplectic
 
 def collect_gradients(log_prob, params, pass_grad = None):
     """Returns the parameters and the corresponding gradients (params.grad).
@@ -175,7 +175,7 @@ class HMC(HMCBase):
 class HMCGaussianAnalytic(HMC):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, a:torch.Tensor):
         super().__init__(step_size, L, log_prob_func, dim)
-        self.a = a  ### this is basically the inverse of the diagonal covariance matrix
+        self.a = 1. / a  ### this is basically the inverse of the diagonal covariance matrix
 
 
     def compute_analytical_hamiltonian_path_gaussian(self, hamiltonian: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
@@ -324,7 +324,6 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                 ham = self.hamiltonian(params, momentum)
 
                 leapfrog_params, leapfrog_momenta = self.step(params, momentum)
-                
                 param_trajectories.append(leapfrog_params)
                 momentum_trajectories.append(leapfrog_momenta)
                 params = leapfrog_params[-1].to(device).detach().requires_grad_()
@@ -365,16 +364,25 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
         param_examples, momenta_examples, _, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model = SymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], channels=[8,8]) if self.model_type =="LA" else GSymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], widths=[self.dim*100, self.dim * 100])
-        
+        input_trajectories = torch.cat([param_examples, momenta_examples], dim = 2).detach()
+        X, y, t = create_training_set_symplectic(input_trajectories)
         self.model, _ = train_symplectic(model, 
-                                  X = torch.cat([param_examples[:, 0, :], momenta_examples[:, 0, :]], dim = 1).detach(),
-                                  y = torch.cat([param_examples, momenta_examples], dim = 2).detach(),
-                                    t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
+                                  X = X,
+                                  y = y,
+                                    t = t * self.step_size, 
                                     epochs=epochs)
         self.burn_state = param_examples[-1, -1, :].detach()
     
     def step(self, q, p):
-        return super().step(q, p)
+        if self.model is None:
+            raise ValueError("Surrogate model is not fit")
+        
+        initial_positions = torch.cat([q,p])[None,...]
+        t = self.L*self.step_size
+        with torch.no_grad():
+            leapfrog_values = self.model.step(initial_positions, t)
+        return leapfrog_values[...,:self.dim], leapfrog_values[...,self.dim:]
+        
     
     def sample(self, q_init=None, num_samples=1000):
         return super().sample(q_init, num_samples)

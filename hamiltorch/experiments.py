@@ -217,7 +217,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
 
 
 
-def surrogate_neural_ode_hmc_sample_size_experiment_analytic(is_analtyic = False):
+def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
     distributions = [ "high_dimensional_gaussian", "high_dimensional_warped_gaussian"]
     sensitivities = ["autograd"]
     solvers = ["SynchronousLeapfrog"]
@@ -237,7 +237,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment_analytic(is_analtyic = False
                         
                         start = time.time()
                         
-                        experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent, is_analytic=is_analtyic, a = a)
+                        experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent, is_analytic=True, a = a)
 
                         end = time.time()
                         model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}

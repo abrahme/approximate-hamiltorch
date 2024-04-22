@@ -122,10 +122,12 @@ class GSymplecticBlock(nn.Module):
         pre_activation_term = torch.matmul(torch.transpose(self.K, 0, 1), torch.diag(self.a))
         if self.mode == "up":
             post_activation_term = self.activation(torch.einsum("ik,...k->...i",self.K, q) + self.bias)
-            return torch.cat([q, dt*torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term) + p], -1)
+            multiplier = torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term)
+            return torch.cat([q, dt*multiplier + p], -1)
         elif self.mode == "down":
             post_activation_term = self.activation(torch.einsum("ik,...k->...i",self.K, p) + self.bias)
-            return torch.cat([q + dt * torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term), p], -1)
+            multiplier = torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term)
+            return torch.cat([q + dt * multiplier , p], -1)
 
         else:
             return z

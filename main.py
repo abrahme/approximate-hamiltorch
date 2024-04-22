@@ -16,4 +16,7 @@ if __name__ == "__main__":
     torch.set_default_device(device)
 
     if experiment == "sample_size":
-        surrogate_neural_ode_hmc_sample_size_experiment_analytic(is_analytic)
+        if is_analytic:
+            surrogate_neural_ode_hmc_sample_size_experiment_analytic()
+        else:
+            surrogate_neural_ode_hmc_sample_size_experiment()
