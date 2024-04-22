@@ -186,19 +186,19 @@ class HMCGaussianAnalytic(HMC):
         t = torch.linspace(0, end=self.L*self.step_size, steps=self.L)
         new_a = torch.sqrt(hamiltonian * a * 2)
         new_b = torch.sqrt(hamiltonian * b * 2)
-        return torch.hstack([torch.outer(torch.cos(t),new_a),  torch.outer(torch.sin(t), new_b)])
+        return torch.outer(torch.cos(t),new_a),  torch.outer(torch.sin(t), new_b)
 
     def compute_analytical_hamiltonian_gradient_gaussian(self, hamiltonian: torch.Tensor,  a: torch.Tensor) -> torch.Tensor:
         b = torch.ones(self.dim)
         t = torch.linspace(0, end=self.L*self.step_size, steps=self.L)
         new_a = torch.sqrt(hamiltonian * a * 2)
         new_b = torch.sqrt(hamiltonian * b * 2)
-        return torch.hstack([-torch.outer(torch.sin(t),new_a),  torch.outer(torch.cos(t), new_b)])
+        return -torch.outer(torch.sin(t),new_a),  torch.outer(torch.cos(t), new_b)
 
-    def step(self, q, p):
+    def step(self, q, p, *args):
         ham = self.hamiltonian(q, p)
-        leapfrog_params, leapfrog_momenta = torch.hsplit(self.compute_analytical_hamiltonian_path_gaussian(ham, self.a), 2)
-        _, gradient_momenta = torch.hsplit(self.compute_analytical_hamiltonian_gradient_gaussian(ham ,self.a))
+        leapfrog_params, leapfrog_momenta = self.compute_analytical_hamiltonian_path_gaussian(ham, self.a)
+        _, gradient_momenta = self.compute_analytical_hamiltonian_gradient_gaussian(ham ,self.a)
 
         return leapfrog_params, leapfrog_momenta, -gradient_momenta
     
@@ -247,10 +247,14 @@ class SurrogateGradientHMC(SurrogateHMCBase):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler)
     
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
+        device = q_init.device
+        print(f'training model on {device}')
         param_examples, _, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model =  NNgHMC(input_dim = self.dim, output_dim = self.dim, hidden_dim =  100 * self.dim)
-        self.model, _ = train(model, torch.flatten(param_examples, end_dim=1), torch.flatten(grad_examples, end_dim=1), epochs=epochs)
-        self.burn_state = param_examples[-1, -1, :]
+        model.to(device)
+        self.model, _ = train(model, torch.flatten(param_examples, end_dim=1).detach().to(device), 
+                              torch.flatten(grad_examples, end_dim=1).detach().to(device), epochs=epochs)
+        self.burn_state = param_examples[-1, -1, :].detach()
 
     def step(self, q, p, grad_func):
         return super().step(q, p, grad_func)
@@ -274,17 +278,20 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         self.model_type = model_type
     
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int, solver:str, sensitivity: str):
+        device = q_init.device
+        print(f'training model on {device}')
         param_examples, momenta_examples, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model = HNNODE(HNNEnergyDeriv(input_dim = self.dim, hidden_dim= 100 * self.dim) , solver = solver, sensitivity=sensitivity)
         if self.model_type == "explicit_hamiltonian":
             model = HNNODE(HNN(HNNEnergyExplicit(self.dim, self.dim * 100)), sensitivity=sensitivity, solver = solver)
+        model.to(device)
         self.model, _ = train_ode(model, 
-                                  X = torch.cat([param_examples[:, 0, :], momenta_examples[:, 0, :]], dim = 1),
-                                  y = torch.cat([param_examples, momenta_examples], dim = 2),
-                                    t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
+                                  X = torch.cat([param_examples[:, 0, :], momenta_examples[:, 0, :]], dim = 1).detach().to(device),
+                                  y = torch.cat([param_examples, momenta_examples], dim = 2).detach().to(device),
+                                    t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L).to(device), 
                                     epochs=epochs, 
                                     gradient_traj=grad_examples.detach())
-        self.burn_state = param_examples[-1, -1, :]
+        self.burn_state = param_examples[-1, -1, :].detach()
         
     def step(self, q, p):
         if self.model is None:
@@ -360,15 +367,17 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler, model_type)
 
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
+        device = q_init.device
+        print(f'training model on {device}')
         param_examples, momenta_examples, _, _ = self.base_sampler.sample(q_init, num_samples=burn)
         model = SymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], channels=[8,8]) if self.model_type =="LA" else GSymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], widths=[self.dim*100, self.dim * 100])
-
+        model.to(device)
         self.model, _ = train_symplectic(model, 
-                                  X = torch.cat([param_examples[:, 0, :], momenta_examples[:, 0, :]], dim = 1),
-                                  y = torch.cat([param_examples, momenta_examples], dim = 2),
-                                    t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L), 
+                                  X = torch.cat([param_examples[:, 0, :], momenta_examples[:, 0, :]], dim = 1).detach().to(device),
+                                  y = torch.cat([param_examples, momenta_examples], dim = 2).detach().to(device),
+                                    t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L).to(device), 
                                     epochs=epochs)
-        self.burn_state = param_examples[-1, -1, :]
+        self.burn_state = param_examples[-1, -1, :].detach()
     
     def step(self, q, p):
         return super().step(q, p)

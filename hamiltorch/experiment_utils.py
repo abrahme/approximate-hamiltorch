@@ -4,8 +4,8 @@ import torch.nn as nn
 device = torch.device("mps") if torch.backends.mps.is_available() else "cpu"
 
 def gaussian_log_prob(omega):
-    mean = torch.tensor([0.,0.,0.]).to(device)
-    stddev = torch.tensor([.5,1.,2.]).to(device)
+    mean = torch.tensor([0.,0.,0.])
+    stddev = torch.tensor([.5,1.,2.])
     ll = torch.distributions.MultivariateNormal(mean, torch.diag(stddev**2)).log_prob(omega)
     return ll.sum()
 
@@ -29,8 +29,8 @@ def normal_normal_conjugate(w):
     return ll.sum()
 
 def high_dimensional_warped_gaussian_log_prob(w, D, scales):
-    mean = torch.zeros(D).to(device)
-    cov = torch.diag(scales).to(device)
+    mean = torch.zeros(D)
+    cov = torch.diag(scales)
     ll = torch.distributions.MultivariateNormal(mean, covariance_matrix=cov).log_prob(w)
     return ll.sum()
     
