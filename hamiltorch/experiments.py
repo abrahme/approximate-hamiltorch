@@ -5,7 +5,7 @@ import arviz as az
 from hamiltorch.hmc import HMC, HMCGaussianAnalytic, SymplecticHMC, SurrogateGradientHMC, SurrogateNeuralODEHMC
 from hamiltorch.ode import SynchronousLeapfrog
 from hamiltorch.plot_utils import plot_reversibility, plot_samples
-from hamiltorch.experiment_utils import banana_log_prob, gaussian_log_prob, high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad, normal_normal_conjugate, compute_hamiltonian_error
+from hamiltorch.experiment_utils import high_dimensional_warped_gaussian_log_prob, banana_log_prob, gaussian_log_prob, high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad, normal_normal_conjugate, compute_hamiltonian_error
 from arviz import ess
 import pandas as pd
 import time
@@ -13,7 +13,7 @@ import time
 
 
 hamiltorch.set_random_seed(13)
-
+scales = 100*torch.rand(30)
 experiment_hyperparams = {
     "banana": {"step_size": .1, "L":5 , "burn": 3000, "N": 6000 , "params_init": torch.Tensor([0.,100.
                                                                                                 ]), "log_prob": banana_log_prob,
@@ -26,7 +26,10 @@ experiment_hyperparams = {
                                      "grad_func": lambda p: params_grad(p, high_dimensional_gaussian_log_prob)},
         "normal_normal": {"step_size": .1, "L":5 , "burn": 3000 , "N": 6000 , "params_init": torch.ones(2), 
                                      "log_prob": lambda omega: normal_normal_conjugate(omega),
-                                     "grad_func": lambda p: params_grad(p, normal_normal_conjugate)}
+                                     "grad_func": lambda p: params_grad(p, normal_normal_conjugate)},
+        "high_dimensional_warped_gaussian": {"step_size": .1, "L":5 , "burn": 3000 , "N": 6000 , "D": 30, "params_init": torch.randn(30), 
+                                     "log_prob": lambda omega: high_dimensional_warped_gaussian_log_prob(omega, D = 30, scales=scales),
+                                     "grad_func": lambda p: params_grad(p, high_dimensional_warped_gaussian_log_prob)}
 }
 
 
@@ -210,6 +213,76 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                     plot_reversibility(model_dict, initial_positions,
                                         distribution=distribution)
     pd.DataFrame(error_list).to_csv("../experiments/diagnostic_results.csv", index = False)
+
+
+
+
+def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
+    distributions = [ "high_dimensional_gaussian", "high_dimensional_warped_gaussian"]
+    sensitivities = ["autograd"]
+    solvers = ["SynchronousLeapfrog"]
+    models = ["GSymplecticNNgHMC","SymplecticNNgHMC", "HMC", "NNgHMC", "Explicit NNODEgHMC", "NNODEgHMC"]
+    percent_of_warmup = np.linspace(0.1, 1, 10)
+    error_list = []
+    for percent in percent_of_warmup:
+        for distribution in distributions:
+            if distribution == "high_dimensional_gaussian":
+                a = torch.ones(experiment_hyperparams[distribution]["D"])
+            else:
+                a = scales
+            for sensitivity in sensitivities:
+                for solver in solvers:
+                    model_dict = {}
+                    for model in models:
+                        
+                        start = time.time()
+                        
+                        experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent, is_analytic=True, a = a)
+
+                        end = time.time()
+                        model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}
+                        
+                    true_samples = model_dict["HMC"]["samples"]
+                    
+                    hamiltorch.set_random_seed(1)
+                    num_samples = 100
+                    initial_momentum = torch.distributions.Normal(0,1).sample(sample_shape = (num_samples, true_samples.shape[-1]))
+                    initial_positions = true_samples[torch.multinomial(torch.ones(true_samples.shape[0]), num_samples = 100, replacement=False), :]
+                    initial_conditions = torch.cat([initial_positions, initial_momentum], -1)
+                    
+                    for model in model_dict:
+                        error_dict = {}
+                        step_size = experiment_hyperparams[distribution]["step_size"] 
+                        L = experiment_hyperparams[distribution]["L"] 
+                        error, forward_traj, backward_traj = compute_reversibility_error(model_dict[model]["model"], initial_conditions,
+                                                            t = torch.linspace(0, L * step_size, L ))
+                        hamiltonian_error = compute_hamiltonian_error(model_dict[model]["model"], initial_conditions,
+                                                            t = torch.linspace(0, L * step_size, L ), 
+                                                            log_prob_func=experiment_hyperparams[distribution]["log_prob"])
+                        model_dict[model]["forward"] = forward_traj[0:5, :]
+                        model_dict[model]["backward"] = backward_traj[0:5, :]
+
+                        error_dict["model"] = model
+                        error_dict["training_size"] = percent
+                        error_dict["sensitivity"] = sensitivity
+                        error_dict["distribution"] = distribution
+                        error_dict["solver"] = solver
+                        error_dict["step_size"] = experiment_hyperparams[distribution]["step_size"]
+                        error_dict["hamiltonian_error"] = hamiltonian_error.detach().numpy()
+                        error_dict["reversibility_error"] = error
+                        error_dict["time"] = model_dict[model]["time"]
+                        # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])
+                        error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].numpy()[None, : ,: ])).x.mean().values
+                        error_list.append(error_dict)
+
+                    plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
+                    plot_reversibility(model_dict, initial_positions,
+                                        distribution=distribution)
+    pd.DataFrame(error_list).to_csv("../experiments/diagnostic_results_analytic.csv", index = False)
+
+
+
+
 
 
 
