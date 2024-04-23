@@ -152,7 +152,7 @@ def surrogate_neural_ode_hmc_experiment():
                 plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
                 plot_reversibility(model_dict, initial_positions,
                                         distribution=distribution)
-    pd.DataFrame(error_list).to_csv("../experiments/diagnostic_results.csv", index = False)
+    pd.DataFrame(error_list).to_csv("experiments/diagnostic_results.csv", index = False)
     
 
 def surrogate_neural_ode_hmc_sample_size_experiment():
@@ -212,7 +212,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                     plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
                     plot_reversibility(model_dict, initial_positions,
                                         distribution=distribution)
-    pd.DataFrame(error_list).to_csv("../experiments/diagnostic_results.csv", index = False)
+    pd.DataFrame(error_list).to_csv("experiments/diagnostic_results.csv", index = False)
 
 
 
@@ -278,7 +278,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
                     plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
                     plot_reversibility(model_dict, initial_positions,
                                         distribution=distribution)
-    pd.DataFrame(error_list).to_csv("../experiments/diagnostic_results_analytic.csv", index = False)
+    pd.DataFrame(error_list).to_csv("experiments/diagnostic_results_analytic.csv", index = False)
 
 
 
