@@ -31,13 +31,13 @@ def plot_samples(sample_dict: Dict, mean, distribution_name=""):
     fs=16
     fig, axs = plt.subplots(2, 3, figsize=(15,15), sharex=True, sharey=True)
     for index, label in enumerate(sample_dict):
-        samples = torch.stack(sample_dict[label]["samples"],0)
+        samples = sample_dict[label]["samples"]
         axs.flat[index].scatter(samples[:,0],samples[:,1], s=5,alpha=0.3,label=label)
         axs.flat[index].scatter(mean[0],mean[1],marker = '*',color='C3',s=100,label='True Mean')
         axs.flat[index].set_title(f"Model: {label}")
     fig.suptitle(f"Samples from {distribution_name} Distribution")
     plt.tight_layout()
-    plt.savefig(f'../experiments/{distribution_name}_samples.png',bbox_inches='tight')
+    plt.savefig(f'experiments/{distribution_name}_samples.png',bbox_inches='tight')
     # plt.show()
 
 
@@ -48,7 +48,7 @@ def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
     
     # Add samples 
     for index, label in enumerate(sample_dict):
-        samples = torch.stack(sample_dict[label]["samples"],0)
+        samples = sample_dict[label]["samples"]
         axs.flat[index].scatter(samples[:, 0], samples[:, 1], alpha = .3, color = "green")
         forward_trajectories = sample_dict[label]["forward"]
         backward_trajectories = sample_dict[label]["backward"]
@@ -69,7 +69,7 @@ def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
                 continue
         axs.flat[index].set_title(f"Model: {label}")
     fig.suptitle(f"Reversibility of {distribution}")
-    plt.savefig(f"../experiments/{distribution}_reversibility.png")
+    plt.savefig(f"experiments/{distribution}_reversibility.png")
     # plt.show()
     plt.clf()
 

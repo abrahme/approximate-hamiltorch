@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
-import hamiltorch
+
 
 def gaussian_log_prob(omega):
     mean = torch.tensor([0.,0.,0.])
-    stddev = torch.tensor([.5,1.,2.]) 
+    stddev = torch.tensor([.5,1.,2.])
     ll = torch.distributions.MultivariateNormal(mean, torch.diag(stddev**2)).log_prob(omega)
     return ll.sum()
 
@@ -25,6 +25,12 @@ def normal_normal_conjugate(w):
     ll += torch.distributions.InverseGamma(2, 3).log_prob(sigma)
     ll += torch.distributions.Normal(1.7, sigma).log_prob(w[0])
 
+    return ll.sum()
+
+def high_dimensional_warped_gaussian_log_prob(w, D, scales):
+    mean = torch.zeros(D)
+    cov = torch.diag(scales)
+    ll = torch.distributions.MultivariateNormal(mean, covariance_matrix=cov).log_prob(w)
     return ll.sum()
     
 
@@ -71,3 +77,7 @@ def params_grad(p, log_prob_func):
     p = p.requires_grad_(True)
     grad = grad(log_prob_func(p), p, create_graph=False)[0]
     return grad
+
+
+
+

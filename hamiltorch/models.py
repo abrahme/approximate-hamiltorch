@@ -1,7 +1,7 @@
 import torch 
 import numpy as np
 import torch.nn as nn
-from typing import Union
+from typing import Union, Tuple
 from torch.autograd import grad
 from torchdyn.core import NeuralODE
 from .symplectic import SymplecticNeuralNetwork, GSymplecticNeuralNetwork
@@ -365,8 +365,8 @@ def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwo
     else:
         raise ValueError
     for epoch in range(epochs):
-        _, y_pred = model.forward(X, t)
-        loss = loss_func(torch.swapaxes(y_pred, 0, 1)[..., :dims], y)
+        y_pred = model.step(X, t)
+        loss = loss_func(y_pred, y)
         if gradient_traj is not None:
             observed_flattened = torch.flatten(gradient_traj, end_dim = -2)
             input_flattened = torch.flatten(y, end_dim = -2)
@@ -396,3 +396,29 @@ def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwo
         # parameters
         optimizer.step()
     return model, epoch
+
+
+
+def create_training_set_symplectic(X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    N, T, D = X.shape
+
+    # Generate all combinations of pairs (i, j) such that i < j
+    i, j = torch.triu_indices(T, T, offset=1)
+    # Calculate the number of pairs
+    K = i.shape[0]
+
+    # Expand the tensor to match the shape of the index pairs
+
+
+    # Use index pairs to select elements from the tensor
+    input_tensor = X[:, i, :]
+    output_tensor = X[:, j, :]
+
+    # Reshape to flatten the first two dimensions
+    input_tensor = input_tensor.reshape(N * K, D)
+    output_tensor = output_tensor.reshape(N * K, D)
+
+    ### get time lengths
+    time = j - i 
+    time_tensor = torch.unsqueeze(torch.tile(time, dims=(N,)), dim = -1)
+    return input_tensor, output_tensor, time_tensor
