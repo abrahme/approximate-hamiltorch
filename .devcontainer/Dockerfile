@@ -55,10 +55,9 @@ RUN pip install \
         ### scikit-ntk \                             ###
         ################################################
         torchdyn \
+        arviz \
         && \
     jupyter labextension enable nbgitpuller 
-
-RUN pip install .
     
 
 ### GitHub CLI Installation
