@@ -119,7 +119,7 @@ class GSymplecticBlock(nn.Module):
     
     def forward(self, z, dt):
         q, p = torch.hsplit(z, 2)
-        pre_activation_term = torch.matmul(torch.transpose(self.K, 0, 1), torch.diag(self.a))
+        pre_activation_term = torch.transpose(self.K, 0, 1) * self.a
         if self.mode == "up":
             post_activation_term = self.activation(torch.einsum("ik,...k->...i",self.K, q) + self.bias)
             multiplier = torch.einsum("ik,...k->...i",pre_activation_term, post_activation_term)

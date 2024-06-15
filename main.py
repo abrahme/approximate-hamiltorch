@@ -1,4 +1,4 @@
-from hamiltorch import surrogate_neural_ode_hmc_experiment, surrogate_neural_ode_hmc_sample_size_experiment, surrogate_neural_ode_hmc_sample_size_experiment_analytic
+from hamiltorch import  surrogate_neural_ode_hmc_sample_size_experiment, surrogate_neural_ode_hmc_sample_size_experiment_analytic
 import torch
 import argparse
 
@@ -19,4 +19,4 @@ if __name__ == "__main__":
         if is_analytic:
             surrogate_neural_ode_hmc_sample_size_experiment_analytic()
         else:
-            surrogate_neural_ode_hmc_sample_size_experiment()
+            surrogate_neural_ode_hmc_sample_size_experiment(device)
