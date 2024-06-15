@@ -363,7 +363,7 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
 
     def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
         param_examples, momenta_examples, _, _ = self.base_sampler.sample(q_init, num_samples=burn)
-        model = SymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], channels=[8,8]) if self.model_type =="LA" else GSymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], widths=[self.dim*100, self.dim * 100])
+        model = SymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"] * 4, channels=[8,8] * 4) if self.model_type =="LA" else GSymplecticNeuralNetwork(dim = self.dim * 2, activation_modes=["up","down"], widths=[self.dim * 500, self.dim * 500])
         input_trajectories = torch.cat([param_examples, momenta_examples], dim = 2).detach()
         X, y, t = create_training_set_symplectic(input_trajectories)
         self.model, _ = train_symplectic(model, 

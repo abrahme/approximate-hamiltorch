@@ -32,7 +32,7 @@ def plot_samples(sample_dict: Dict, mean, distribution_name=""):
     fig, axs = plt.subplots(2, 3, figsize=(15,15), sharex=True, sharey=True)
     for index, label in enumerate(sample_dict):
         samples = sample_dict[label]["samples"]
-        axs.flat[index].scatter(samples[:,0],samples[:,1], s=5,alpha=0.3,label=label)
+        axs.flat[index].scatter(samples[:,0].cpu(),samples[:,1].cpu(), s=5,alpha=0.3,label=label)
         axs.flat[index].scatter(mean[0],mean[1],marker = '*',color='C3',s=100,label='True Mean')
         axs.flat[index].set_title(f"Model: {label}")
     fig.suptitle(f"Samples from {distribution_name} Distribution")
@@ -49,7 +49,7 @@ def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
     # Add samples 
     for index, label in enumerate(sample_dict):
         samples = sample_dict[label]["samples"]
-        axs.flat[index].scatter(samples[:, 0], samples[:, 1], alpha = .3, color = "green")
+        axs.flat[index].scatter(samples[:, 0].cpu(), samples[:, 1].cpu(), alpha = .3, color = "green")
         forward_trajectories = sample_dict[label]["forward"]
         backward_trajectories = sample_dict[label]["backward"]
         num_samples = forward_trajectories.shape[0]
@@ -62,8 +62,8 @@ def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
             try:
                 power_smooth_forward = CubicSpline(t, forward_trajectories[i])(xnew)
                 power_smooth_backward = CubicSpline(t, backward_trajectories[i])(xnew)
-                axs.flat[index].plot(power_smooth_forward[:,0], power_smooth_forward[:,1] ,label = "Forward Trajectory", color = "blue")
-                axs.flat[index].plot(power_smooth_backward[:,0], power_smooth_backward[:,1], label = "Backward Trajectory", color = "red")
+                axs.flat[index].plot(power_smooth_forward[:,0].cpu(), power_smooth_forward[:,1].cpu() ,label = "Forward Trajectory", color = "blue")
+                axs.flat[index].plot(power_smooth_backward[:,0].cpu(), power_smooth_backward[:,1].cpu(), label = "Backward Trajectory", color = "red")
                 
             except:
                 continue

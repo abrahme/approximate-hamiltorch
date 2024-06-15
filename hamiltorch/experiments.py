@@ -33,12 +33,13 @@ experiment_hyperparams = {
 }
 
 
-def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, is_analytic = False, a = None):
+def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, is_analytic = False, a = None, device = "cuda"):
     hamiltorch.set_random_seed(123)
     print(f"Running experiment for: solver: {solver}, sensitivity: {sensitivity}, distribution: {distribution}, model: {model_type}")
     experiment_params = experiment_hyperparams[distribution]
     log_prob = experiment_params["log_prob"]
-    params_init = experiment_params["params_init"]
+    params_init = experiment_params["params_init"].to(device)
+
     dim = params_init.shape[0]
     step_size = experiment_params["step_size"]
     L = experiment_params["L"]
@@ -100,62 +101,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent = 1, i
 
         return params_hmc_surrogate_gsymplectic_nnghmc, sampler.model, gradient_func
 
-
-
-
-def surrogate_neural_ode_hmc_experiment():
-    distributions = ["banana", "gaussian", "high_dimensional_gaussian", "normal_normal"]
-    sensitivities = ["autograd"]
-    solvers = ["SynchronousLeapfrog"]
-    models = ["HMC", "NNgHMC", "Explicit NNODEgHMC", "NNODEgHMC"]
-    error_list = []
-    for distribution in distributions:
-        for sensitivity in sensitivities:
-            for solver in solvers:
-                model_dict = {}
-                for model in models:
-                    
-                    start = time.time()
-                    
-                    experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver)
-
-                    end = time.time()
-                    model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}
-                    
-                true_samples = model_dict["HMC"]["samples"]
-                
-                hamiltorch.set_random_seed(1)
-                num_samples = 100
-                initial_momentum = torch.distributions.Normal(0,1).sample(sample_shape = (num_samples, true_samples.shape[-1]))
-                initial_positions = true_samples[torch.multinomial(torch.ones(true_samples.shape[0]), num_samples = 100, replacement=False), :]
-                initial_conditions = torch.cat([initial_positions, initial_momentum], -1)
-                
-                for model in model_dict:
-                    error_dict = {}
-                    step_size = experiment_hyperparams[distribution]["step_size"] 
-                    L = experiment_hyperparams[distribution]["L"] 
-                    error, forward_traj, backward_traj = compute_reversibility_error(model_dict[model]["model"], initial_conditions,
-                                                        t = torch.linspace(0, L * step_size, L ))
-                    model_dict[model]["forward"] = forward_traj[0:5, :]
-                    model_dict[model]["backward"] = backward_traj[0:5, :]
-
-                    error_dict["model"] = model
-                    error_dict["sensitivity"] = sensitivity
-                    error_dict["distribution"] = distribution
-                    error_dict["solver"] = solver
-                    error_dict["reversibility_error"] = error
-                    error_dict["time"] = model_dict[model]["time"]
-                    # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])
-                    error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].numpy()[None, : ,: ])).x.mean().values
-                    error_list.append(error_dict)
-
-                plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)
-                plot_reversibility(model_dict, initial_positions,
-                                        distribution=distribution)
-    pd.DataFrame(error_list).to_csv("experiments/diagnostic_results.csv", index = False)
-    
-
-def surrogate_neural_ode_hmc_sample_size_experiment():
+def surrogate_neural_ode_hmc_sample_size_experiment(device = "cuda"):
     distributions = ["banana", "gaussian", "high_dimensional_gaussian", "normal_normal"]
     sensitivities = ["autograd"]
     solvers = ["SynchronousLeapfrog"]
@@ -171,7 +117,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         
                         start = time.time()
                         
-                        experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent)
+                        experiment_samples, experiment_model, experiment_grad_func = run_experiment(model, sensitivity, distribution, solver, percent, device=device)
 
                         end = time.time()
                         model_dict[model] = {"samples":experiment_samples[:, -1, :].detach(), "model": experiment_model, "time": end - start}
@@ -202,11 +148,10 @@ def surrogate_neural_ode_hmc_sample_size_experiment():
                         error_dict["distribution"] = distribution
                         error_dict["solver"] = solver
                         error_dict["step_size"] = experiment_hyperparams[distribution]["step_size"]
-                        error_dict["hamiltonian_error"] = hamiltonian_error.detach().numpy()
-                        error_dict["reversibility_error"] = error
+                        error_dict["hamiltonian_error"] = hamiltonian_error.detach().cpu().numpy()
+                        error_dict["reversibility_error"] = error.detach().cpu().numpy()
                         error_dict["time"] = model_dict[model]["time"]
-                        # error_dict["acf"] = autocorr(torch.stack(model_dict[model]["samples"],0).numpy()[None, :, :])
-                        error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].numpy()[None, : ,: ])).x.mean().values
+                        error_dict["ess"] = ess(az.convert_to_inference_data(model_dict[model]["samples"].cpu().numpy()[None, : ,: ])).x.mean().values
                         error_list.append(error_dict)
 
                     plot_samples(model_dict, mean = experiment_hyperparams[distribution]["params_init"], distribution_name=distribution)

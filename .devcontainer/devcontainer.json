@@ -1,5 +1,5 @@
 {
-    "name": "pytorch-cuda",
+    "name": "pytorch-cuda-hamiltorch",
     "build": {
         "dockerfile": "Dockerfile",
         "options": ["--format=docker"]        // required for Podman, remove line if using Docker
@@ -16,8 +16,8 @@
     "runArgs": [
         "--user=1000:100",
         "--userns=keep-id:uid=1000,gid=100",  // required for Podman, remove line if using Docker
-        "--name=pytorch-cuda", // needs to be unique
-        "--hostname=pytorch-cuda_container", // needs to be unique
+        "--name=pytorch-cuda-hamiltorch", // needs to be unique
+        "--hostname=pytorch-cuda-hamiltorch_container", // needs to be unique
         "--device=nvidia.com/gpu=all",
         "--security-opt=label=disable"
     ],
