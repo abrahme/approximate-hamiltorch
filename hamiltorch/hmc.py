@@ -397,16 +397,22 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: HMC | HMCGaussianAnalytic, model_type: str):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler, model_type)
 
-    def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int, use_gradient: bool = False):
+    def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int, use_gradient: bool = False,
+                         n_blocks: int = 8):
+        """n_blocks sets the depth of the underlying symplectic net. Note the
+        time-symmetric wrapper applies that net twice, so a Rev model with
+        n_blocks has the same *effective* depth as a plain model with
+        2*n_blocks while carrying only half the parameters."""
         param_examples, momenta_examples, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
+        assert n_blocks % 2 == 0, "n_blocks must be even (alternating up/down)"
+        modes = ["up", "down"] * (n_blocks // 2)
         model = (
-            SymplecticNeuralNetwork(dim=self.dim * 2, activation_modes=["up", "down"] * 4, channels=[8, 8] * 4)
-            if self.model_type in ("LA", "RevLA")
             # 2 gradient blocks = 2 shears, which provably cannot represent a
             # rotation (the exact Gaussian flow); leapfrog itself needs 3.
-            # 8 alternating blocks cut the rotation-fit error by ~5000x.
-            else GSymplecticNeuralNetwork(dim=self.dim * 2, activation_modes=["up", "down"] * 4,
-                                          widths=[self.dim * 100] * 8)
+            SymplecticNeuralNetwork(dim=self.dim * 2, activation_modes=modes, channels=[8] * n_blocks)
+            if self.model_type in ("LA", "RevLA")
+            else GSymplecticNeuralNetwork(dim=self.dim * 2, activation_modes=modes,
+                                          widths=[self.dim * 100] * n_blocks)
         )
         if self.model_type.startswith("Rev"):
             # train and propose with the exactly momentum-reversible composition
