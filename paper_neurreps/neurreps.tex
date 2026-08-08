@@ -1,0 +1,353 @@
+%%%% NeurReps 2026 — Proceedings Track (archival, double-blind) %%%%
+\documentclass[mlmain,onecolumn]{jmlr}
+
+% Watermark — remove for camera-ready
+\usepackage[hpos=300px,vpos=70px]{draftwatermark}
+\SetWatermarkText{}
+\SetWatermarkScale{1}
+\SetWatermarkAngle{0}
+
+% amsmath, amssymb, natbib, graphicx, url, algorithm2e are auto-loaded
+\usepackage{booktabs}
+
+% jmlr.cls already provides proposition/lemma/proof environments
+
+\def\R{\mathbb{R}}
+\newcommand{\Ham}{H}
+\newcommand{\flip}{R}
+
+\jmlrvolume{}
+\jmlryear{2026}
+\jmlrworkshop{Symmetry and Geometry in Neural Representations}
+
+\title[Symplectic Is Not Enough]{Symplectic Is Not Enough: Time-Reversal
+Symmetry in Neural Hamiltonian Proposals}
+
+% Authors omitted for double-blind review.
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+A Hamiltonian flow carries two structures: it preserves the symplectic form,
+and it is time-reversal symmetric, meaning that reversing the momentum,
+flowing forward, and reversing again inverts the flow. Symplectic neural
+networks (SympNets) encode the first structure exactly, by architecture. We
+observe that they do not encode the second, and that this is not a cosmetic
+gap: when a SympNet is used as the proposal of a Metropolis--Hastings sampler,
+symplecticity supplies volume preservation but time-reversal symmetry is what
+supplies the involution required for detailed balance. A trained SympNet
+violates it by $\mathcal{O}(10^{-1})$, so the resulting chain does not target
+the intended distribution, and the discrepancy does not vanish with more
+training data. We give a construction that imposes the missing symmetry
+exactly rather than approximately. Because every SympNet layer is a shear, it
+admits a closed-form inverse; composing the network with its momentum-conjugate
+inverse yields a map that is symplectic and involutive as an algebraic
+identity in the weights, is consistent (it reduces to the exact flow when the
+network is exact), and adds no parameters. Empirically the construction moves
+the reversibility error from $10^{-4}$--$10^{-2}$ to machine precision across
+targets, uniformly in depth, whereas increasing depth alone never fixes it. In
+a depth-controlled comparison the symmetrized network matches the sampling
+efficiency of a plain network of twice the depth and four times the parameters.
+The construction is architecture-agnostic within the SympNet family and
+extends unchanged to non-separable Hamiltonians.
+\end{abstract}
+
+\begin{keywords}
+symplectic neural networks, Hamiltonian Monte Carlo, time-reversal symmetry,
+structure-preserving architectures, geometric integration
+\end{keywords}
+
+\section{Introduction}
+
+Structure-preserving architectures encode a known invariance of a physical
+system directly into a hypothesis class, so that the invariance holds for every
+choice of weights rather than being approached through training. Symplectic
+neural networks \citep{jin2020sympnets} are a canonical instance: each layer is
+a shear on phase space, so the network is a symplectic map by construction and
+its Jacobian has unit determinant identically.
+
+Hamiltonian dynamics, however, possess more than one structure. Writing
+$z = (q,p)$ and $\flip(q,p) = (q,-p)$ for the momentum flip, the exact flow
+$\Phi_t$ of a Hamiltonian that is even in the momentum satisfies both
+\begin{equation}
+    \Phi_t^{*}\,(dq \wedge dp) = dq \wedge dp
+    \qquad\text{and}\qquad
+    \flip \circ \Phi_t \circ \flip = \Phi_t^{-1}.
+    \label{eq:two-structures}
+\end{equation}
+The first is symplecticity. The second is time-reversal symmetry: reversing the
+momentum, flowing forward for time $t$, and reversing the momentum again
+returns the system to where it began. A SympNet inherits the first property
+from its architecture. It does not inherit the second, and nothing in the usual
+training objective --- a regression of predicted onto observed states ---
+rewards it.
+
+We argue that this asymmetry matters, and that the setting where it matters
+most sharply is Markov chain Monte Carlo. Hamiltonian Monte Carlo
+\citep{Brooks_2011} proposes states by integrating Hamiltonian dynamics and
+corrects the discretization error with a Metropolis accept--reject step. The
+correctness of that step rests on exactly the two properties in
+\eqref{eq:two-structures}: volume preservation removes the Jacobian factor
+from the acceptance ratio, and time-reversal symmetry supplies the reverse move
+required by detailed balance. Surrogate methods that replace the expensive
+gradient of the log density with a learned one
+\citep{Li_2019,DHULIPALA2023112425} retain both properties automatically,
+because the learned object is placed inside a leapfrog integrator that
+possesses them. A learned \emph{flow map} is different: it replaces the
+integrator, so the network itself must supply the structure.
+
+Our contributions are as follows.
+\begin{itemize}
+    \item We show that a SympNet used as an MCMC proposal satisfies volume
+    preservation but violates involutivity, and that the violation is
+    substantial in practice ($\mathcal{O}(10^{-1})$ at initialization,
+    $10^{-4}$--$10^{0}$ after training). The resulting sampler is not
+    asymptotically exact, and no amount of training data repairs this.
+    \item We give a construction, $\Psi_t = \flip \circ \Phi_{t/2}^{-1} \circ
+    \flip \circ \Phi_{t/2}$, that restores the missing symmetry exactly. We
+    prove it is symplectic and involutive for arbitrary weights
+    (Proposition~\ref{prop:involution}) and consistent
+    (Lemma~\ref{lem:consistency}), and we give closed-form inverses for the
+    LA- and G-SympNet layers that make it exact and cheap.
+    \item We verify the construction numerically and, in a depth-controlled
+    comparison, separate what the symmetry contributes from what its additional
+    effective depth contributes. Reversibility is restored uniformly in depth,
+    a structural effect; sampling efficiency improves in the weaker sense of
+    parameter efficiency, and we report this distinction explicitly.
+\end{itemize}
+
+\section{Background}
+
+\subsection{Validity of a deterministic Metropolis proposal}
+
+Let $\pi(z) \propto e^{-\Ham(z)}$ on $\R^{2D}$ with $\Ham \circ \flip = \Ham$,
+and consider a Metropolis--Hastings scheme that proposes $z' = T(z)$
+deterministically and accepts with probability
+$\min\{1, e^{\Ham(z) - \Ham(Tz)}\}$. This leaves $\pi$ invariant provided
+\begin{align}
+    \text{(V)} \quad & |\det \nabla T(z)| = 1, \label{eq:vol}\\
+    \text{(I)} \quad & (\flip \circ T) \circ (\flip \circ T) = \mathrm{Id},
+    \label{eq:inv}
+\end{align}
+that is, volume preservation and involutivity of $\flip \circ T$
+\citep{Green1995,Tierney1998}. Leapfrog integration of any force field
+depending on position alone satisfies both identically, which is why
+gradient-learning surrogates remain asymptotically exact: an inaccurate network
+lowers the acceptance rate but cannot bias the stationary distribution. This
+robustness is a property of the integrator, not of the learning.
+
+\subsection{Symplectic networks}
+
+A SympNet composes layers that update either $q$ or $p$ using a function of the
+other, unmodified half of the state. For the gradient (G) module in ``up'' mode
+the layer is $(q,p) \mapsto (q,\; p + \tau\, K^{\!\top} a\, \sigma(Kq + b))$,
+and the linear (LA) module composes several such shears with symmetric
+matrices. Each layer has unit-determinant Jacobian, so \eqref{eq:vol} holds for
+any weights. Condition \eqref{eq:inv} is a statement about the interaction of
+the map with $\flip$, and no layer constrains it.
+
+\section{The missing symmetry}
+
+\subsection{Closed-form inverses}
+
+The shear structure that gives SympNets their symplecticity also makes them
+exactly invertible. In an ``up'' layer the position $q$ passes through
+untouched, so the increment added to $p$ can be recomputed from the output and
+subtracted; the inverse is the same expression with the sign reversed, at
+identical cost and with no iteration. In the LA module the shear is followed by
+a translation, so the inverse subtracts the translation first and then undoes
+the shears in reverse order. Composing layer inverses in reverse order gives
+$\Phi_t^{-1}$ exactly; we measure
+$\|\Phi_t^{-1}\Phi_t z - z\|_\infty \approx 10^{-15}$ in double precision.
+
+\subsection{The symmetrized map}
+
+Define
+\begin{equation}
+    \Psi_t \;:=\; \flip \circ \Phi_{t/2}^{-1} \circ \flip \circ \Phi_{t/2}.
+    \label{eq:psi}
+\end{equation}
+
+\begin{proposition}
+\label{prop:involution}
+If $\Phi_{t/2}$ is invertible then $\Psi_t$ satisfies \eqref{eq:inv}; if
+$\Phi_{t/2}$ is in addition symplectic then $\Psi_t$ satisfies \eqref{eq:vol}.
+Consequently the Metropolis--Hastings chain with proposal $\Psi_t$ leaves
+$\pi$ invariant for arbitrary network weights.
+\end{proposition}
+
+\begin{proof}
+Write $\Phi := \Phi_{t/2}$. Since $\flip^2 = \mathrm{Id}$,
+\[
+    \flip \circ \Psi_t
+    = \flip \circ \flip \circ \Phi^{-1} \circ \flip \circ \Phi
+    = \Phi^{-1} \circ \flip \circ \Phi,
+\]
+a conjugation of the involution $\flip$, hence itself an involution:
+$(\flip \circ \Psi_t)^2 = \Phi^{-1} \flip \Phi \Phi^{-1} \flip \Phi
+= \Phi^{-1} \flip^2 \Phi = \mathrm{Id}$, which is \eqref{eq:inv}. For
+\eqref{eq:vol}, note $\flip$ is anti-symplectic, reversing the sign of the
+canonical form; therefore $\flip \circ \Phi^{-1} \circ \flip$ is symplectic,
+and $\Psi_t$, a composition of two symplectic maps, is symplectic, so
+$|\det \nabla \Psi_t| = 1$. Neither argument uses any property of $\Phi$ beyond
+invertibility and symplecticity.
+\end{proof}
+
+The half-step in \eqref{eq:psi} makes the construction consistent: it does not
+perturb a model that is already correct.
+
+\begin{lemma}
+\label{lem:consistency}
+If $\Phi_s$ is the exact time-$s$ flow of a Hamiltonian with
+$\Ham \circ \flip = \Ham$, then $\Psi_t = \Phi_t$.
+\end{lemma}
+
+\begin{proof}
+By \eqref{eq:two-structures}, $\Phi_{t/2}^{-1} = \flip \circ \Phi_{t/2} \circ
+\flip$. Substituting into \eqref{eq:psi} and using $\flip^2 = \mathrm{Id}$
+gives $\Psi_t = \Phi_{t/2} \circ \Phi_{t/2} = \Phi_t$.
+\end{proof}
+
+Finally, the property survives composition: if $\flip \Psi \flip = \Psi^{-1}$
+then $\flip \Psi^{k} \flip = \Psi^{-k}$, so $(\flip \Psi^{k})^2 = \mathrm{Id}$
+for every $k$, and multi-step trajectories remain valid proposals.
+
+\subsection{Relation to existing work}
+
+Equation \eqref{eq:psi} is the adjoint, or symmetrization, composition of
+geometric integration \citep{HairerLubichWanner}, in which a method is composed
+with its adjoint $\Phi^{*}_t = \Phi_{-t}^{-1}$ to produce a symmetric method;
+here the adjoint is realized as $\flip \circ \Phi^{-1} \circ \flip$. Enforcing
+exact invertibility so that a learned proposal admits a tractable reverse move
+is likewise established for neural samplers \citep{song2017nice,
+levy2018generalizing}. Our claim is not that this machinery is new, but that
+the SympNet family --- which is otherwise an unusually clean example of a
+structure-preserving architecture --- is missing one of the two structures it
+is usually assumed to capture, and that the omission is consequential wherever
+the learned flow is used as a proposal. The closed-form layer inverses make the
+repair exact rather than approximate.
+
+\section{Experiments}
+
+We train LA- and G-SympNets on warm-up trajectories from Hamiltonian Monte
+Carlo and use the learned map as a proposal, correcting with the exact
+Hamiltonian. Targets are a $3$-dimensional Gaussian, a $2$-dimensional
+normal-gamma posterior, and a $30$-dimensional Gaussian. All models are trained
+under an identical protocol (Adam, initial learning rate $10^{-2}$, learning
+rate halved on plateau, early stopping, best-iterate restoration), so that
+comparisons reflect the architecture rather than optimizer tuning.
+
+\paragraph{Structural validity.}
+Table~\ref{tab:validity} evaluates \eqref{eq:vol} and \eqref{eq:inv} directly
+for each proposal map, using randomly initialized weights to emphasize that
+these are properties of the construction and not of training. Every
+integrator-based surrogate satisfies both conditions to machine precision.
+Plain SympNets satisfy volume preservation but violate involutivity by
+$\mathcal{O}(10^{-1})$. The symmetrized versions satisfy both.
+
+\begin{table}[t]
+\centering
+\caption{Validity conditions for each proposal map, at random initialization
+($D=2$, $L=5$, $\epsilon = 0.1$, double precision). Volume preservation is
+measured as $\max |{\det \nabla T}| - 1$ and involutivity as
+$\max \| (\flip T)^2 z - z \|_\infty$.}
+\label{tab:validity}
+\begin{tabular}{lccc}
+\toprule
+proposal map & $|\det \nabla T| - 1$ & involution error & valid \\
+\midrule
+Exact leapfrog (HMC)            & $2\cdot10^{-16}$ & $3\cdot10^{-16}$ & yes \\
+Learned force $+$ leapfrog      & $3\cdot10^{-16}$ & $7\cdot10^{-16}$ & yes \\
+Learned separable $\Ham$ $+$ leapfrog & $7\cdot10^{-16}$ & $1\cdot10^{-15}$ & yes \\
+Learned field $+$ leapfrog      & $8\cdot10^{-16}$ & $9\cdot10^{-16}$ & yes \\
+\midrule
+LA-SympNet (plain)              & $1\cdot10^{-15}$ & $2.4\cdot10^{-1}$ & \textbf{no} \\
+G-SympNet (plain)               & $7\cdot10^{-16}$ & $1.2\cdot10^{-1}$ & \textbf{no} \\
+LA-SympNet (symmetrized)        & $2\cdot10^{-15}$ & $4\cdot10^{-16}$ & yes \\
+G-SympNet (symmetrized)         & $7\cdot10^{-16}$ & $1\cdot10^{-16}$ & yes \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Disentangling symmetry from depth.}
+The map \eqref{eq:psi} evaluates the network twice, so a symmetrized network of
+$n$ blocks has the same \emph{effective depth} as a plain network of $2n$
+blocks while carrying half the parameters. Comparing $\Psi$ against a plain
+network of equal block count would therefore confound the symmetry with extra
+depth. Figure~\ref{fig:control} compares at matched effective depth.
+
+The two panels separate cleanly. Reversibility (panel a) is restored to machine
+precision by symmetrization at every depth, and is \emph{not} restored by
+depth: a plain $16$-block network remains at $\sim\!10^{-4}$, four orders of
+magnitude short of even the shallowest symmetrized model. This is the
+structural effect, and it is unambiguous.
+
+Sampling efficiency (panel b) tells a more modest story, and we state it
+plainly. Much of the effective sample size gained by symmetrization can also be
+obtained by simply making the plain network deeper: on the Gaussian target a
+plain $8$-block network attains an ESS of $150$, a plain $16$-block network
+$1906$, and the symmetrized $4$-block network $1914$. What survives the control
+is a parameter-efficiency claim rather than a sampling-quality claim: the
+symmetrized $4$-block model matches the plain $16$-block model using a quarter
+of the parameters, and matches exact HMC ($1963$). On the remaining two targets
+the differences in ESS lie within run-to-run variation. We also note that the
+plain models are non-monotone in depth --- $483$, $150$, $1906$ for $4$, $8$,
+$16$ blocks --- while the symmetrized models are stable across depth
+($1914$, $2022$), which is consistent with the symmetry acting as a constraint
+that removes a direction of variation the true solution never uses.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{symmetry_control.pdf}
+\caption{Depth-controlled comparison. Rev-$n$ and plain-$2n$ have equal
+effective depth; Rev-$n$ has half the parameters. (a) Reversibility error:
+symmetrization restores machine precision uniformly in depth, while depth alone
+never does. (b) Effective sample size: the symmetrized model matches a plain
+model of twice the depth and four times the parameters, and matches exact HMC
+(dashed).}
+\label{fig:control}
+\end{figure}
+
+\paragraph{Non-separable Hamiltonians.}
+Because SympNets approximate arbitrary symplectic maps, neither the
+architecture nor Proposition~\ref{prop:involution} requires the Hamiltonian to
+be separable; only the source of the training trajectories changes. We train on
+Riemannian-manifold HMC trajectories \citep{Betancourt_2013} generated with the
+explicit integrator of \citet{Tao_2016}, recording the full phase-space field
+$(\partial_p \Ham, -\partial_q \Ham)$, which that integrator already forms at
+every stage. The symmetrized model attains reversibility of $10^{-13}$ against
+$10^{0}$ for the plain model, matching the separable case.
+
+\section{Discussion}
+
+The observation we wish to emphasize is structural rather than empirical. When
+an architecture is described as structure-preserving it is worth asking which
+structures, and whether the downstream use requires others. SympNets preserve
+the symplectic form exactly and are frequently adopted for that reason; but the
+flows they are meant to model are also time-reversal symmetric, and that second
+symmetry is the one an accept--reject correction actually consumes. Because it
+can be imposed exactly by composition, at no cost in parameters and with no
+loss of consistency, there is little reason to leave it to training.
+
+Our depth-controlled comparison also carries a methodological caution. The
+symmetrized map evaluates its network twice, and a comparison that matches
+block count rather than effective depth would have attributed to the symmetry
+an improvement largely explained by depth. We recommend that comparisons in
+this family control for effective depth, and we report the resulting weaker
+efficiency claim rather than the stronger uncontrolled one.
+
+Limitations are worth stating. Our targets are low-dimensional, and the
+efficiency benefit we can defend is parameter efficiency rather than improved
+sampling; establishing the latter would require higher-dimensional posteriors
+and a comparison against adaptive baselines such as NUTS
+\citep{hoffman2011nouturn}. Separately, effective sample size alone cannot
+validate a surrogate sampler: a map with a large involution defect can produce
+sample paths with low autocorrelation while targeting the wrong distribution,
+so structural diagnostics of the kind in Table~\ref{tab:validity} should
+accompany it.
+
+\bibliography{neurreps}
+
+\end{document}

@@ -1,0 +1,93 @@
+\begin{thebibliography}{12}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Betancourt(2013)]{Betancourt_2013}
+Michael Betancourt.
+\newblock \emph{A General Metric for Riemannian Manifold Hamiltonian Monte
+  Carlo}, page 327–334.
+\newblock Springer Berlin Heidelberg, 2013.
+\newblock ISBN 9783642400209.
+\newblock \doi{10.1007/978-3-642-40020-9_35}.
+\newblock URL \url{http://dx.doi.org/10.1007/978-3-642-40020-9_35}.
+
+\bibitem[Brooks et~al.(2011)Brooks, Gelman, Jones, and Meng]{Brooks_2011}
+Steve Brooks, Andrew Gelman, Galin Jones, and Xiao-Li Meng.
+\newblock \emph{Handbook of Markov Chain Monte Carlo}.
+\newblock Chapman and Hall/CRC, May 2011.
+\newblock ISBN 9780429138508.
+\newblock \doi{10.1201/b10905}.
+\newblock URL \url{http://dx.doi.org/10.1201/b10905}.
+
+\bibitem[Dhulipala et~al.(2023)Dhulipala, Che, and
+  Shields]{DHULIPALA2023112425}
+Somayajulu~L.N. Dhulipala, Yifeng Che, and Michael~D. Shields.
+\newblock Efficient bayesian inference with latent hamiltonian neural networks
+  in no-u-turn sampling.
+\newblock \emph{Journal of Computational Physics}, 492:\penalty0 112425, 2023.
+\newblock ISSN 0021-9991.
+\newblock \doi{https://doi.org/10.1016/j.jcp.2023.112425}.
+\newblock URL
+  \url{https://www.sciencedirect.com/science/article/pii/S002199912300520X}.
+
+\bibitem[Green(1995)]{Green1995}
+Peter~J. Green.
+\newblock Reversible jump markov chain monte carlo computation and bayesian
+  model determination.
+\newblock \emph{Biometrika}, 82\penalty0 (4):\penalty0 711--732, 1995.
+
+\bibitem[Hairer et~al.(2006)Hairer, Lubich, and Wanner]{HairerLubichWanner}
+Ernst Hairer, Christian Lubich, and Gerhard Wanner.
+\newblock \emph{Geometric Numerical Integration: Structure-Preserving
+  Algorithms for Ordinary Differential Equations}, volume~31 of \emph{Springer
+  Series in Computational Mathematics}.
+\newblock Springer, 2 edition, 2006.
+
+\bibitem[Hoffman and Gelman(2011)]{hoffman2011nouturn}
+Matthew~D. Hoffman and Andrew Gelman.
+\newblock The no-u-turn sampler: Adaptively setting path lengths in hamiltonian
+  monte carlo, 2011.
+
+\bibitem[Jin et~al.(2020)Jin, Zhang, Zhu, Tang, and
+  Karniadakis]{jin2020sympnets}
+Pengzhan Jin, Zhen Zhang, Aiqing Zhu, Yifa Tang, and George~Em Karniadakis.
+\newblock Sympnets: Intrinsic structure-preserving symplectic networks for
+  identifying hamiltonian systems, 2020.
+
+\bibitem[Levy et~al.(2018)Levy, Hoffman, and
+  Sohl-Dickstein]{levy2018generalizing}
+Daniel Levy, Matthew~D. Hoffman, and Jascha Sohl-Dickstein.
+\newblock Generalizing hamiltonian monte carlo with neural networks, 2018.
+
+\bibitem[Li et~al.(2019)Li, Holbrook, Shahbaba, and Baldi]{Li_2019}
+Lingge Li, Andrew Holbrook, Babak Shahbaba, and Pierre Baldi.
+\newblock Neural network gradient hamiltonian monte carlo.
+\newblock \emph{Computational Statistics}, 34\penalty0 (1):\penalty0 281–299,
+  January 2019.
+\newblock ISSN 1613-9658.
+\newblock \doi{10.1007/s00180-018-00861-z}.
+\newblock URL \url{http://dx.doi.org/10.1007/s00180-018-00861-z}.
+
+\bibitem[Song et~al.(2017)Song, Zhao, and Ermon]{song2017nice}
+Jiaming Song, Shengjia Zhao, and Stefano Ermon.
+\newblock A-nice-mc: Adversarial training for mcmc, 2017.
+
+\bibitem[Tao(2016)]{Tao_2016}
+Molei Tao.
+\newblock Explicit symplectic approximation of nonseparable hamiltonians:
+  Algorithm and long time performance.
+\newblock \emph{Physical Review E}, 94\penalty0 (4), October 2016.
+\newblock ISSN 2470-0053.
+\newblock \doi{10.1103/physreve.94.043303}.
+\newblock URL \url{http://dx.doi.org/10.1103/PhysRevE.94.043303}.
+
+\bibitem[Tierney(1998)]{Tierney1998}
+Luke Tierney.
+\newblock A note on metropolis-hastings kernels for general state spaces.
+\newblock \emph{The Annals of Applied Probability}, 8\penalty0 (1):\penalty0
+  1--9, 1998.
+
+\end{thebibliography}
