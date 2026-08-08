@@ -242,7 +242,31 @@ The model is trained by providing initial conditions to $f( \cdot )$, evolving t
 Additionally, this method can be easily extended to Riemannian Manifold Hamiltonian Monte Carlo, by simply substituting Riemannian Manifold Hamiltonian Monte Carlo trajectories during the training period instead of the Hamiltonian Monte Carlo trajectories and modifying the leapfrog dynamics to handle non-separable Hamiltonians \cite{Tao_2016}. 
 
 \subsubsection{Model Architecture and Optimization}
-All models are run for 100 epochs, with a learning rate of .01 using the Adam stochastic optimization algorithm. Each model takes an input of size $2 \cdot D$, as the concatenated position $q$ and momentum $p$ are fed to the model. Furthermore, each model consists of only 1 hidden layer, parametrized by $2 \cdot D \cdot 100$ hidden units, where $D$ is the dimensionality of the parameter space. The \textbf{tanh} activation function is used to add non-linearity in the hidden layer.  Brief descriptions of various architectures used are described below, along with accompanying diagrams \ref{fig:architecture}. All methods were implemented in pytorch \cite{paszke2019pytorch}.
+\label{sec:ode-training}
+Each model takes an input of size $2 \cdot D$, as the concatenated position $q$
+and momentum $p$ are fed to the model, and consists of a single hidden layer of
+$100 \cdot D$ units, where $D$ is the dimensionality of the parameter space. The
+\textbf{tanh} activation function is used to add non-linearity in the hidden
+layer. Brief descriptions of various architectures used are described below,
+along with accompanying diagrams \ref{fig:architecture}. All methods were
+implemented in pytorch \cite{paszke2019pytorch}.
+
+Models are trained for at most $100$ epochs with the Adam optimizer at an
+initial learning rate of $10^{-2}$. To keep the comparison between surrogates
+a comparison of \emph{models} rather than of optimizer tuning, every surrogate
+in this work --- including the NNgHMC baseline and the symplectic networks of
+\Cref{sec:snn-training} --- is fit with an identical optimization protocol:
+the learning rate is halved on plateau (patience $6$), training stops early if
+the objective fails to improve for $25$ epochs, and the parameters attaining
+the lowest objective are restored at the end rather than those of the final
+epoch.
+
+The training signal is the pair (trajectory loss, gradient loss). Warm-up
+trajectories are recorded at the $L+1$ times $0, \epsilon, \ldots, L\epsilon$,
+with the initial state included and the momentum reported at integer times:
+the leapfrog half-step is undone at \emph{every} step, not only the last, so
+that each stored $(q,p)$ pair is synchronized and the recorded states lie on
+the trajectory the surrogate is asked to reproduce.
 \subsubsection{Approximating HMC}
 We consider two model architectures, Neural ODE Gradient HMC (NNODEgHMC) and Hamiltonian Neural ODE Gradient HMC (HNNODEgHMC). The former produces $f$ which approximates $\frac{\partial H}{\partial p}$ and $\frac{\partial H}{\partial q}$ directly, while the latter contains a sub-model $f$ which approximates $H(q,p)$. Through gradient enabled auto-differentiation of this sub-model, $\frac{\partial H}{\partial p}$ and $\frac{\partial H}{\partial q}$ are produced. The resulting gradient approximations are evolved forward using leapfrog steps. 
 
@@ -255,12 +279,76 @@ Denoting $z = (q,p)$, the learned function $\hat{\phi}(z,t)$ is symplectic, and 
 
 We implement two architectures proposed by \cite{jin2020sympnets}, \textbf{LA-Symplectic-Net} and \textbf{G-Symplectic-Net}. Details about the implementation can be found in the aforementioned paper. 
 
-Our training data involves generating all possible pairs of start and end points within the evolution of each trajectory. For example, given a trajectory of length $L$, we generate the training pairs $\{(x_i, x_j)\}_{i=1, j=1}^{L}$ where $i < j$. Here, $x_i$ is the position in phase space at time $t = i$. We seek to minimize the loss between $\hat{\phi}(x_i,j - i)$ and $x_j$. Note that we do not take into account gradient information to help aid the learning process, as it is unclear how to do so. 
+Our training data involves generating all possible pairs of start and end points within the evolution of each trajectory. For example, given a trajectory of length $L$, we generate the training pairs $\{(x_i, x_j)\}_{i=1, j=1}^{L}$ where $i < j$. Here, $x_i$ is the position in phase space at time $t = i$. We seek to minimize the loss between $\hat{\phi}(x_i,j - i)$ and $x_j$.
+
+Gradient information can in fact be supplied, and we do so here. Because
+$\hat\phi(z,\tau)$ is the time-$\tau$ flow map, its generator is recovered by
+differentiating in $\tau$ at the origin,
+\begin{equation}
+    \left. \dd{\hat\phi(z,\tau)}{\tau} \right|_{\tau = 0}
+    \;=\; \left( \dd{H}{p},\, -\dd{H}{q} \right)(z),
+    \label{eq:snn-generator}
+\end{equation}
+so the vector field the SNN implies at any observed state is a single
+directional derivative of the network with respect to its time argument. We
+evaluate \eqref{eq:snn-generator} in forward mode: $\tau$ is a scalar, so one
+Jacobian-vector product yields the whole $2D$-dimensional velocity, whereas
+reverse mode would require a backward pass per output component. Matching the
+momentum half of \eqref{eq:snn-generator} to the recorded $\nabla \log p$
+supplies the same gradient supervision the integrator-based surrogates
+receive; the position half must equal $p$, which the trajectory already
+provides at no extra cost. For non-separable (RMHMC) trajectories we record
+the complete field $(\partial_p H, -\partial_q H)$ during warm-up --- it is
+already formed at every stage of the integrator --- and match both halves.
 
 
 
 \subsubsection{Model Architecture and Optimization}
-All models are run for 500 epochs, with a learning rate of .01 using the Adam stochastic optimization algorithm. Each model takes an input of size $2 \cdot D$, as the concatenated position $q$ and momentum $p$ are fed to the model, as well as the time evolution vector of length $L$ denoting the step size taken at time $t$. The \textbf{Swish} \cite{ramachandran2017searching} activation function is used to add non-linearity in the hidden layers, as the architecture of SNNs require deep composition of layers. All methods were implemented in pytorch \cite{paszke2019pytorch}. 
+\label{sec:snn-training}
+Each model takes an input of size $2 \cdot D$, as the concatenated position $q$
+and momentum $p$ are fed to the model, as well as the time evolution vector of
+length $L$ denoting the step size taken at time $t$. The \textbf{Swish}
+\cite{ramachandran2017searching} activation function is used to add
+non-linearity in the hidden layers, as the architecture of SNNs requires deep
+composition of layers. All methods were implemented in pytorch
+\cite{paszke2019pytorch}.
+
+\paragraph{Depth.} Both architectures use $8$ alternating (up/down) blocks:
+the G-SympNet with width $100 \cdot D$ per block, the LA-SympNet with $8$
+channels per linear block. Depth is not a free tuning choice here. Each block
+is a shear, and a composition of two shears cannot represent a rotation: for
+the linear map $[[I + BA,\, B],[A,\, I]]$ obtained from two shears, matching a
+rotation through angle $\vartheta$ requires simultaneously $1 + BA =
+\cos\vartheta$ and $BA = -\sin^2\vartheta$, which forces
+$\cos^2\vartheta = \cos\vartheta$ and so admits only
+$\vartheta \in \{0, \pi/2\}$. Since the exact flow of a Gaussian target is a
+rotation in each $(q_i,p_i)$ plane through angle $\omega_i t$, a two-block
+network cannot represent it at any width --- leapfrog itself requires three
+shears. Empirically, fitting a noiseless rotation of $3$ radians attains a
+mean-squared error of $1.0$ with two blocks and $2 \times 10^{-4}$ with eight.
+
+\paragraph{Conditioning.} A shear scaled by $\tau$ amplifies the state by
+approximately $(1 + \|A\| \tau)$, so a composition of $n$ shears with unit-norm
+initialization amplifies by $(1+\tau)^{n}$. For the default $64$ shears of the
+LA architecture this reaches $\sim\!10^{12}$ at $\tau = 1.5$, which is within
+the range of time offsets seen by any target whose step size is not small. We
+therefore rescale the shear weights by $1/n$ at construction, which returns
+the amplification at $\tau = 1.5$ to $1.04$ and leaves the closed-form
+inverses of \Cref{sec:symmetrization} exact to machine precision.
+
+\paragraph{Optimization.} SNNs are trained for at most $300$ epochs in
+mini-batches of $4096$ pairs, under the same protocol as
+\Cref{sec:ode-training}: Adam at $10^{-2}$, learning rate halved on plateau,
+early stopping (patience $20$), and restoration of the best iterate. The
+number of training pairs grows quadratically in $L$, so mini-batching rather
+than full-batch descent is what makes the trajectory-pair construction
+tractable. Because the gradient term of \eqref{eq:snn-generator} is typically
+one to two orders of magnitude larger than the trajectory term at
+initialization, we rescale it once, at the start of training, by the ratio of
+the two losses; without this the gradient term dominates the objective that
+actually determines proposal quality, and the ablation of
+\Cref{figure:ess-vs-training} would compare loss weightings rather than
+supervision signals.
 \subsubsection{Approximating HMC / RMHMC}
 Since SNNs can approximate any arbitrary symplectic map, there is no tangible difference between the training procedures of dealing with HMC and RMHMC trajectories. We consider the two model architectures previously mentioned, \textbf{LA-Symplectic-Net} and \textbf{G-Symplectic-Net}.
 
@@ -309,11 +397,24 @@ We evaluate our method against baseline ``surrogate" and traditional methods by 
 
 
 \subsection{Synthetic Results}
-In the following plots, each model was trained on the warm-up trajectories generated by HMC. The table below details the parameters of the experiment (step size, samples) , as well as the posterior distribution, up to a constant. The number of posterior samples generated was always equal to the number of training samples. All trajectories used 5 timesteps. 
+In the following plots, each model was trained on the warm-up trajectories
+generated by HMC. The table below details the parameters of the experiment
+(step size, samples), as well as the posterior distribution, up to a constant.
+The number of posterior samples generated was always equal to the number of
+training samples. All trajectories used $L = 5$ leapfrog steps and are recorded
+at the $L+1 = 6$ times $0, \epsilon, \ldots, 5\epsilon$, the initial state
+included; the surrogates are consequently supervised on time offsets up to
+$5\epsilon$, which is also the horizon at which they are asked to propose.
 
 
 \begin{table}[t]
-\caption{Experiment parameters, including from L to R distribution name, log posterior density, step size, and number of training samples.}
+\caption{Experiment parameters, including from L to R distribution name, log
+posterior density, step size, and number of training samples. The GP
+regression target is the posterior over three hyperparameters (log
+lengthscale, log signal variance, log noise variance) of a squared-exponential
+GP fit to $200$ observations under standard normal priors; each gradient
+evaluation requires an $O(n^3)$ Cholesky factorization, placing it in the
+expensive-likelihood regime that motivates surrogate methods.}
 \label{Experiment parameters}
 \vskip 0.15in
 \begin{center}
@@ -324,9 +425,10 @@ Distribution & $log(p(\theta | y))$ & $\eta$ &  Samples\\
 \toprule
 
      Banana & $-\frac{\theta_1^2}{200} - \frac{(\theta_2 + \theta_1^2 - 100)^2}{2}$ & .1 &  $3 \cdot 10^3$\\
-     Gaussian & $log(\mathcal{N}(0, diag(.5, 1, .2))$ & .3 &  $10^3$\\
+     Gaussian & $log(\mathcal{N}(0, diag(.25, 1, 4))$ & .3 &  $10^3$\\
      Normal-Gamma & $\frac{-(\theta_1^2)}{2 \cdot 1.5} - \frac{(1.7 - \theta_1)^2}{2 \cdot e^{\theta_2}}$ & .1 &  $3 \cdot 10^3$\\
      High-Dimensional Gaussian & $\frac{-\sum_i^{30} (\theta_i)^2}{2}$ & .1 &  $3 \cdot 10^3$\\
+     GP Regression & $log(\mathcal{N}(y; 0, K_\theta)) + log(\mathcal{N}(\theta; 0, I))$ & .05 &  $1.5 \cdot 10^3$\\
 \bottomrule
 
 \end{tabular}
@@ -406,9 +508,40 @@ Distribution & $log(p(\theta | y))$ & $\eta$ &  Samples\\
 \section{Discussion and Future Work}
 Experiments in the Hamiltonian Monte Carlo setting for a few distributions showed that adding a trajectory deviation penalty to traditional NNgHMC \cite{Li_2019} allows for more efficient training; as shown in \Cref{figure:ess-vs-training}, fewer training samples were needed to produce proposals of similar quality. However, as the NNODEgHMC models are trained using Neural ODE methods, longer trajectory length could prove to be computationally costly. The benefit of gradient based models which are integrated with leapfrog integrators was clearly shown; they behave with proper Hamiltonian dynamics, if given enough training samples.
 
-On the contrary, directly learning the flow of the Hamiltonian through SNNs proved to be an interesting experiment; even without using gradient information, SNNs were able to produce quality samples from the posterior, while approximating Hamiltonian dynamics. We note that the ESS/s of this method is low not due to the quality of samples produced, but due to the length of training. This method's training, like the NNgHMC, does not depend on the length of the trajectory, nor the step size, but consists of a composition of multiple layers, while the other methods consist of only one wide layer. Providing gradient information during training is a logical next step for improving the efficiency and performance of this surrogate method. 
+On the contrary, directly learning the flow of the Hamiltonian through SNNs
+proved to be an interesting experiment; SNNs were able to produce quality
+samples from the posterior while approximating Hamiltonian dynamics. Unlike
+the integrator-based surrogates, whose training cost is independent of
+trajectory length, the SNN objective grows quadratically in $L$ through the
+pair construction, which mini-batching mitigates but does not remove.
 
-More importantly, although discussed in the methods section, RMHMC methods were not explored. However, approximating RMHMC is a very natural extension of the work conducted regarding approximating HMC. Because RMHMC trajectories are very costly to compute, it is of more importance that we are able to recover accurate approximations with minimal trajectories. The NNODEgHMC and SNN architecture provide tangible ways to do so, and will hopefully make using RMHMC a more viable option. 
+Two limitations of the flow-learning approach are worth separating. The first
+is statistical: what the SNN must learn is a map on the full $2D$-dimensional
+phase space, parameterized by time, whereas the gradient-based surrogates learn
+a field on the $D$-dimensional position space alone, from labels the warm-up
+phase already produces. The second is structural, and is the more consequential
+of the two: as shown in \Cref{sec:symmetrization}, an unmodified SNN supplies
+volume preservation but not involutivity, so it is not a valid Metropolis
+proposal at all, and its bias does not diminish with additional training data.
+The symmetrized construction $\Psi_t$ repairs this exactly and at no cost in
+parameters, and it is the form in which we would recommend the architecture be
+used. We caution that $\Psi_t$ evaluates the underlying network twice, so
+comparisons against unsymmetrized baselines must control for effective depth
+rather than block count.
+
+Approximating RMHMC is a natural extension of this work, and one where the
+economics are more favorable: because Riemannian trajectories require a metric
+tensor --- and hence second derivatives of the log density --- at every stage of
+the integrator, the cost per exact trajectory is far higher, so a surrogate has
+correspondingly more to save. Two aspects transfer directly. Trajectories are
+generated with the explicit integrator of \cite{Tao_2016} on the augmented
+state, and the complete phase-space field $(\partial_p H, -\partial_q H)$ is
+recorded during warm-up at no meaningful additional cost, since the integrator
+already forms it; that field supplies gradient supervision for the
+non-separable case exactly as $\nabla \log p$ does in the separable one.
+Because SNNs approximate arbitrary symplectic maps, the flow-learning
+architecture requires no modification whatsoever for the non-separable
+setting --- only the source of the training trajectories changes.
 
 
 

@@ -597,3 +597,85 @@ def rmhmc_experiment(device: str = "cuda"):
 
     pd.DataFrame(error_list).to_csv("experiments/rmhmc_results.csv", index=False)
     print("RMHMC experiment results saved to experiments/rmhmc_results.csv")
+
+
+# ── Symmetrization control: is the gain from the symmetry or just depth? ─────
+
+def run_symmetry_arm(arm, distribution, percent, device="cuda"):
+    """arm = (label, model_type, n_blocks)."""
+    label, model_type, n_blocks = arm
+    hamiltorch.set_random_seed(123)
+    hp = experiment_hyperparams[distribution]
+    log_prob = hp["log_prob"]
+    params_init = hp["params_init"].to(device)
+    dim = params_init.shape[0]
+    step_size, L = hp["step_size"], hp["L"]
+    burn, N = _chain_lengths(hp)
+    base = HMC(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim)
+    if model_type == "HMC":
+        traj, _, _, _ = base.sample(q_init=params_init, num_samples=int(burn * percent))
+        traj, _, _, _ = base.sample(q_init=traj[-1, -1, :], num_samples=N - int(burn * percent))
+        def model_func(x, t):
+            r = base.step(x[..., :dim], x[..., dim:])
+            return (None, torch.cat([r[0], r[1]], -1))
+        return traj, model_func, 0
+    sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
+                            dim=dim, base_sampler=base, model_type=model_type)
+    sampler.create_surrogate(q_init=params_init, burn=int(burn * percent),
+                             epochs=SNN_EPOCHS, n_blocks=n_blocks)
+    out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
+    n_par = sum(p.numel() for p in sampler.model.parameters())
+    return out, sampler.model, n_par
+
+
+def symmetrization_control_experiment(device: str = "cuda"):
+    """Disentangle the time-symmetric wrapper's symmetry from its extra depth.
+
+    Psi = R . Phi^{-1} . R . Phi applies Phi twice, so Rev(n) has the same
+    effective depth as plain(2n) with half the parameters. Comparing
+    Rev(n) against plain(2n) isolates the symmetry; comparing Rev(n) against
+    plain(n) confounds it with depth.
+    """
+    arms = [
+        ("HMC",        "HMC",       0),
+        ("plain-4",    "GSymp",     4),
+        ("plain-8",    "GSymp",     8),
+        ("plain-16",   "GSymp",    16),
+        ("Rev-4",      "RevGSymp",  4),   # effective depth 8  -> compare vs plain-8
+        ("Rev-8",      "RevGSymp",  8),   # effective depth 16 -> compare vs plain-16
+    ]
+    distributions = ["gaussian", "normal_normal", "high_dimensional_gaussian"]
+    percents = [1.0] if SMOKE else [0.325, 0.55, 1.0]
+    rows = []
+    for percent in percents:
+        for distribution in distributions:
+            hp = experiment_hyperparams[distribution]
+            results = {}
+            for arm in arms:
+                start = time.time()
+                samples, model, n_par = run_symmetry_arm(arm, distribution, percent, device=device)
+                results[arm[0]] = {"samples": samples[:, -1, :].detach(), "model": model,
+                                   "time": time.time() - start, "params": n_par}
+            true_samples = results["HMC"]["samples"]
+            hamiltorch.set_random_seed(1)
+            n_eval = min(100, true_samples.shape[0])
+            mom = torch.distributions.Normal(0, 1).sample(sample_shape=(n_eval, true_samples.shape[-1]))
+            pos = true_samples[torch.multinomial(torch.ones(true_samples.shape[0]),
+                                                 num_samples=n_eval, replacement=False), :]
+            init = torch.cat([pos, mom], -1)
+            t_span = torch.linspace(0, hp["L"] * hp["step_size"], hp["L"] + 1)
+            for label in results:
+                err, _, _ = compute_reversibility_error(results[label]["model"], init, t=t_span)
+                rows.append({
+                    "arm": label,
+                    "effective_depth": {"HMC": 0, "plain-4": 4, "plain-8": 8, "plain-16": 16,
+                                        "Rev-4": 8, "Rev-8": 16}[label],
+                    "params": results[label]["params"],
+                    "distribution": distribution,
+                    "training_size": percent,
+                    "reversibility_error": err.detach().cpu().numpy(),
+                    "ess": _compute_ess(results[label]["samples"]),
+                    "time": results[label]["time"],
+                })
+    pd.DataFrame(rows).to_csv("experiments/symmetrization_control.csv", index=False)
+    print("Symmetrization control saved to experiments/symmetrization_control.csv")

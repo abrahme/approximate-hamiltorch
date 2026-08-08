@@ -188,7 +188,10 @@ class HNNEnergyExplicit(nn.Module):
     def forward(self, x, *args, **kwargs):
         n = self.input_dim
         q, p = x[..., :n], x[..., n:]
-        return self.layer_2(nn.Tanh()(self.layer_1(q))) + .5 * torch.square(p).sum(axis = -1)
+        # squeeze the trailing potential dim: (N,1) + (N,) would broadcast to
+        # (N,N), scaling the whole learned vector field by the batch size
+        potential = self.layer_2(nn.Tanh()(self.layer_1(q))).squeeze(-1)
+        return potential + .5 * torch.square(p).sum(axis = -1)
     
 class RMHNNEnergyExplicit(nn.Module):
     """

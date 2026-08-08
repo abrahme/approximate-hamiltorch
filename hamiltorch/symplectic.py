@@ -128,17 +128,16 @@ class SymplecticNeuralNetwork(nn.Module):
         return z
 
     def forward(self, z, t):
-        ### here z is the initial position, and t is a tensor of variable times
-        ### this predicts at each of the variable time
-        
-        # forward_t = lambda t: self.step(z, t)
-        # preds = torch.vmap(forward_t, out_dims=0)(t)
-        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
-        preds = []
-        for dt in dts:
-            z = self.step(z, dt)
-            preds.append(z)
-        return t, torch.stack(preds,axis=0)
+        """Trajectory at times t, each evaluated directly from the initial z.
+
+        The network is trained on single applications (x_i, dt) -> x_j and the
+        sampler proposes with a single step(z, L*eps); nothing enforces the
+        composition property phi(.,2dt) = phi(.,dt)^2. Composing small steps
+        here would measure an operator that is neither trained nor used for
+        proposals, so the diagnostic would not describe the sampler.
+        """
+        preds = [self.step(z, dt) for dt in t]
+        return t, torch.stack(preds, axis=0)
 
 
 
@@ -208,17 +207,16 @@ class GSymplecticNeuralNetwork(nn.Module):
         return z
 
     def forward(self, z, t):
-        ### here z is the initial position, and t is a tensor of variable times
-        ### this predicts at each of the variable time
-        
-        # forward_t = lambda t: self.step(z, t)
-        # preds = torch.vmap(forward_t, out_dims=0)(t)
-        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
-        preds = []
-        for dt in dts:
-            z = self.step(z, dt)
-            preds.append(z)
-        return t, torch.stack(preds,axis=0)
+        """Trajectory at times t, each evaluated directly from the initial z.
+
+        The network is trained on single applications (x_i, dt) -> x_j and the
+        sampler proposes with a single step(z, L*eps); nothing enforces the
+        composition property phi(.,2dt) = phi(.,dt)^2. Composing small steps
+        here would measure an operator that is neither trained nor used for
+        proposals, so the diagnostic would not describe the sampler.
+        """
+        preds = [self.step(z, dt) for dt in t]
+        return t, torch.stack(preds, axis=0)
 
     
 
@@ -252,9 +250,13 @@ class TimeSymmetricSymplectic(nn.Module):
         return self._flip(z)
 
     def forward(self, z, t):
-        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
-        preds = []
-        for dt in dts:
-            z = self.step(z, dt)
-            preds.append(z)
+        """Trajectory at times t, each evaluated directly from the initial z.
+
+        The network is trained on single applications (x_i, dt) -> x_j and the
+        sampler proposes with a single step(z, L*eps); nothing enforces the
+        composition property phi(.,2dt) = phi(.,dt)^2. Composing small steps
+        here would measure an operator that is neither trained nor used for
+        proposals, so the diagnostic would not describe the sampler.
+        """
+        preds = [self.step(z, dt) for dt in t]
         return t, torch.stack(preds, axis=0)
