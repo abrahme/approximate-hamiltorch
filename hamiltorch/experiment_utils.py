@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.autograd import grad as autograd_grad
 
 
 def gaussian_log_prob(omega):
@@ -9,7 +10,7 @@ def gaussian_log_prob(omega):
     return ll.sum()
 
 def banana_log_prob(w, a = 1, b = 1, c = 1):
-    ll = -(1/200) * torch.square(a * w[0]) - .5 * torch.square(c*w[1] + b * torch.square(a * w[0]) - 100 * b)
+    ll = -(1/200) * torch.square(a * w[..., 0]) - .5 * torch.square(c*w[..., 1] + b * torch.square(a * w[..., 0]) - 100 * b)
     return ll.sum()
 
 def high_dimensional_gaussian_log_prob(w, D):
@@ -19,12 +20,11 @@ def high_dimensional_gaussian_log_prob(w, D):
 
 def normal_normal_conjugate(w):
     mu0 = 0.0
-    tau = 1.5 
-    sigma = torch.exp(w[1]) + .001
-    ll = torch.distributions.Normal(mu0 , tau).log_prob(w[0])
+    tau = 1.5
+    sigma = torch.exp(w[..., 1]) + .001
+    ll = torch.distributions.Normal(mu0, tau).log_prob(w[..., 0])
     ll += torch.distributions.InverseGamma(2, 3).log_prob(sigma)
-    ll += torch.distributions.Normal(1.7, sigma).log_prob(w[0])
-
+    ll += torch.distributions.Normal(1.7, sigma).log_prob(w[..., 0])
     return ll.sum()
 
 def high_dimensional_warped_gaussian_log_prob(w, D, scales):
@@ -74,10 +74,72 @@ def compute_hamiltonian_error(model, test_initial_conditions, t, log_prob_func):
 
 
 def params_grad(p, log_prob_func):
-    p = p.requires_grad_(True)
-    grad = grad(log_prob_func(p), p, create_graph=False)[0]
-    return grad
+    p = p.detach().requires_grad_(True)
+    return autograd_grad(log_prob_func(p), p, create_graph=False)[0]
 
 
 
 
+
+
+def funnel_log_prob(w):
+    """Neal's funnel (2-D): v ~ N(0, 9), x ~ N(0, e^v).
+
+    The canonical target where position-dependent curvature defeats plain HMC
+    and Riemannian methods shine."""
+    v, x = w[..., 0], w[..., 1]
+    ll = torch.distributions.Normal(0., 3.).log_prob(v)
+    ll = ll + torch.distributions.Normal(0., torch.exp(v / 2)).log_prob(x)
+    return ll.sum()
+
+
+def make_gp_regression_log_prob(num_data=200):
+    """Log posterior of GP regression hyperparameters (log lengthscale,
+    log signal variance, log noise variance) with standard-normal priors.
+
+    Each evaluation requires an O(N^3) Cholesky, so gradient calls are
+    genuinely expensive — the regime surrogate HMC targets. The dataset is
+    deterministic (pseudo-noise from a fixed formula) so every run and every
+    device sees identical data without RNG/device coupling.
+    """
+    x = torch.linspace(-3., 3., num_data)
+    true_f = torch.sin(2. * x) + 0.5 * torch.cos(5. * x)
+    noise = 0.1 * torch.sin(123.456 * x * x)
+    y = true_f + noise
+    sq_dists = (x[:, None] - x[None, :]) ** 2
+
+    def log_prob(w):
+        log_l, log_s, log_n = w[..., 0], w[..., 1], w[..., 2]
+        ls2 = torch.exp(2. * log_l)[..., None, None]
+        sig = torch.exp(log_s)[..., None, None]
+        noise_v = (torch.exp(log_n) + 1e-4)[..., None, None]
+        K = sig * torch.exp(-sq_dists / (2. * ls2)) + noise_v * torch.eye(num_data)
+        ll = torch.distributions.MultivariateNormal(
+            torch.zeros(num_data), covariance_matrix=K).log_prob(y)
+        prior = torch.distributions.Normal(0., 1.).log_prob(w).sum()
+        return ll.sum() + prior
+
+    return log_prob
+
+
+def compute_rm_hamiltonian_error(model, test_initial_conditions, t, rm_hamiltonian_func):
+    """Mean relative drift of a *Riemannian* Hamiltonian along model
+    trajectories. rm_hamiltonian_func(q, p) evaluates the exact non-separable
+    Hamiltonian for a single (unbatched) phase-space point; rows whose exact
+    Hamiltonian cannot be evaluated (diverged trajectories) are skipped."""
+    D = test_initial_conditions.shape[-1] // 2
+    _, trajectories = model(test_initial_conditions, t)
+    traj = torch.swapaxes(trajectories.detach(), 0, 1)  # (B, T, 2D)
+    errors = []
+    for b in range(traj.shape[0]):
+        try:
+            h = torch.stack([
+                rm_hamiltonian_func(traj[b, i, :D], traj[b, i, D:]).reshape(())
+                for i in range(traj.shape[1])
+            ])
+            errors.append(torch.mean(torch.abs((h - h[0]) / h[0])))
+        except Exception:
+            continue
+    if not errors:
+        return torch.tensor(float("nan"))
+    return torch.stack(errors).mean()

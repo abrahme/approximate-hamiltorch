@@ -1,8 +1,9 @@
-import torch 
+import torch
 import numpy as np
 import torch.nn as nn
 from typing import Union, Tuple
 from torch.autograd import grad
+from torch.func import jacfwd
 from torchdyn.core import NeuralODE
 from .symplectic import SymplecticNeuralNetwork, GSymplecticNeuralNetwork
 
@@ -94,7 +95,7 @@ class PotentialFunction(nn.Module):
 
 
     def forward(self, x, *args, **kwargs):
-        return nn.Softplus()(self.layer_2(nn.Tanh()(self.layer_1(x))))
+        return self.layer_2(nn.Tanh()(self.layer_1(x)))
 
 
 
@@ -162,7 +163,8 @@ class PSDPotential(nn.Module):
         L = torch.reshape(L, (bs, self.diag_dim, self.diag_dim))
 
         D = torch.bmm(L, L.permute(0, 2, 1))
-        return D, nn.Softplus()(self.nonlinearity(self.linear3(h)))
+        # potential head is linear: -log p(q) is unbounded, so no squashing
+        return D, self.linear3(h)
 
 
 
@@ -186,7 +188,7 @@ class HNNEnergyExplicit(nn.Module):
     def forward(self, x, *args, **kwargs):
         n = self.input_dim
         q, p = x[..., :n], x[..., n:]
-        return nn.Softplus()(self.layer_2(nn.Tanh()(self.layer_1(q)))) + .5 * torch.square(p).sum(axis = -1)
+        return self.layer_2(nn.Tanh()(self.layer_1(q))) + .5 * torch.square(p).sum(axis = -1)
     
 class RMHNNEnergyExplicit(nn.Module):
     """
@@ -207,7 +209,7 @@ class RMHNNEnergyExplicit(nn.Module):
         q, p = x[..., :self.input_dim], x[..., self.input_dim:]
 
         mass_matrix, potential = self.hamiltonian_components(q)
-        kinetic = .5 * torch.bmm(p[:, None, :], torch.bmm(mass_matrix, p[:, :, None]))
+        kinetic = .5 * torch.bmm(p[:, None, :], torch.bmm(mass_matrix, p[:, :, None])).squeeze(-1)
         return potential + kinetic
 
 
@@ -235,8 +237,9 @@ class RMHNN(nn.Module):
         super(RMHNN, self).__init__()
         self.H = Hamiltonian
     def forward(self, x, *args, **kwargs):
-        n = self.H.input_dim // 2 ### here the hamiltonian is expected to take in both q,p
-        with torch.set_grad_enabled(True): 
+        # RMHNNEnergyExplicit.input_dim is the position dimension D; x is (q, p)
+        n = self.H.input_dim
+        with torch.set_grad_enabled(True):
             x = x.requires_grad_(True)
             gradH = grad(self.H(x).sum(), x, create_graph=True)[0]
         return torch.cat([gradH[..., n:], -gradH[..., :n]], -1).to(x)
@@ -277,126 +280,185 @@ class NNODEgRMHMC(nn.Module):
 
 
 
-def train(model: nn.Module, X, y, epochs = 10, lr = .01, loss_type = "l2"):
-    # early_stopper = EarlyStopper(patience = 10)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    print("Training Surrogate Model")
-     # Compute and print loss.
+def _make_loss(loss_type):
     if loss_type == "l2":
-        loss_func = nn.MSELoss()
-    else:
-        raise ValueError
-    for epoch in range(epochs):
+        return nn.MSELoss()
+    raise ValueError(f"Unknown loss type: {loss_type}")
 
+
+def _restore_best(model, best_state):
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    return model
+
+
+def train(model: nn.Module, X, y, epochs = 100, lr = .01, loss_type = "l2", patience = 25):
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
+    print("Training Surrogate Model")
+    loss_func = _make_loss(loss_type)
+    early_stopper = EarlyStopper(patience=patience)
+    best_loss, best_state = float("inf"), None
+    for epoch in range(epochs):
         y_pred = model(X)
         loss = loss_func(y_pred, y)
-        # if early_stopper.early_stop(loss):             
-        #     break
-       
-        # Before the backward pass, use the optimizer object to zero all of the
-        # gradients for the variables it will update (which are the learnable
-        # weights of the model). This is because by default, gradients are
-        # accumulated in buffers( i.e, not overwritten) whenever .backward()
-        # is called. Checkout docs of torch.autograd.backward for more details.
+
         optimizer.zero_grad()
-
-        # Backward pass: compute gradient of the loss with respect to model
-        # parameters
         loss.backward()
-
-        # Calling the step function on an Optimizer makes an update to its
-        # parameters
         optimizer.step()
-    return model, epoch
+        scheduler.step(loss)
+
+        loss_val = float(loss.detach())
+        if loss_val < best_loss:
+            best_loss = loss_val
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        if early_stopper.early_stop(loss_val):
+            break
+    return _restore_best(model, best_state), epoch
 
 
-def train_ode(model: nn.Module, X, y, t,  epochs = 10, lr = .01, loss_type = "l2", gradient_traj = None):
-    # early_stopper = EarlyStopper(patience = 10)
+def train_ode(model: nn.Module, X, y, t,  epochs = 100, lr = .01, loss_type = "l2", gradient_traj = None, patience = 25, gradient_mode = "momentum"):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
     print("Training Surrogate ODE Model")
-     # Compute and print loss.
     dims = y.shape[-1]
-    if loss_type == "l2":
-        loss_func = nn.MSELoss()
-        
-    else:
-        raise ValueError
+    loss_func = _make_loss(loss_type)
+    early_stopper = EarlyStopper(patience=patience)
+    best_loss, best_state = float("inf"), None
     for epoch in range(epochs):
         _, y_pred = model(X, t)
         loss = loss_func(torch.swapaxes(y_pred, 0, 1)[..., :dims], y)
         if gradient_traj is not None:
             observed_flattened = torch.flatten(gradient_traj, end_dim = -2)
             input_flattened = torch.flatten(y, end_dim = -2)
-            gradient_loss = loss_func(model.odefunc(input_flattened)[..., dims // 2 : ], observed_flattened)
+            field = model.odefunc(input_flattened)
+            if gradient_mode == "full":
+                # observed is the complete (dq/dt, dp/dt) field (non-separable H)
+                gradient_loss = loss_func(field[..., :dims], observed_flattened)
+            else:
+                # observed is grad log p = dp/dt (separable H)
+                gradient_loss = loss_func(field[..., dims // 2 : ], observed_flattened)
         else:
             gradient_loss = 0.0
 
-
         total_loss = gradient_loss + loss
-        # if early_stopper.early_stop(total_loss):             
-        #         break
-        # Before the backward pass, use the optimizer object to zero all of the
-        # gradients for the variables it will update (which are the learnable
-        # weights of the model). This is because by default, gradients are
-        # accumulated in buffers( i.e, not overwritten) whenever .backward()
-        # is called. Checkout docs of torch.autograd.backward for more details.
+
         optimizer.zero_grad()
-
-        # Backward pass: compute gradient of the loss with respect to model
-        # parameters
         total_loss.backward()
-
-        # Calling the step function on an Optimizer makes an update to its
-        # parameters
         optimizer.step()
-    return model, epoch
+        scheduler.step(total_loss)
+
+        if epoch % 20 == 0:
+            print(f"Epoch {epoch}: trajectory loss {float(loss):.6f}")
+        loss_val = float(total_loss.detach())
+        if loss_val < best_loss:
+            best_loss = loss_val
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        if early_stopper.early_stop(loss_val):
+            break
+    return _restore_best(model, best_state), epoch
 
 
 
-def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwork], X, y, t, epochs = 10, lr = .01, loss_type = "l2", gradient_traj = None):
-    # early_stopper = EarlyStopper(patience = 10)
+def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwork], X, y, t, epochs = 300, lr = .01,
+                     loss_type = "l2", gradient_traj = None, batch_size = 4096, patience = 20,
+                     gradient_weight = "auto"):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    print("Training Surrogate ODE Model")
-     # Compute and print loss.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
+    print("Training Surrogate Symplectic Model")
     dims = y.shape[-1]
-    if loss_type == "l2":
-        loss_func = nn.MSELoss()
-        
-    else:
-        raise ValueError
+    D = dims // 2
+    loss_func = _make_loss(loss_type)
+    early_stopper = EarlyStopper(patience=patience)
+    best_loss, best_state = float("inf"), None
+    N = X.shape[0]
+    dt0 = torch.zeros(1, device=X.device)
+    # The gradient term is typically 3-35x the trajectory term at init, so an
+    # unweighted sum lets it dominate the objective that actually determines
+    # proposal quality. Rescale once so both start at comparable magnitude.
+    grad_w = 1.0
+    if gradient_traj is not None and gradient_weight == "auto":
+        with torch.no_grad():
+            n0 = min(N, batch_size)
+            y0, g0 = y[:n0], gradient_traj[:n0]
+            v0 = jacfwd(lambda dt: model.step(y0, dt))(dt0).squeeze(-1)
+            if g0.shape[-1] == dims:
+                gl0 = loss_func(v0, g0)
+            else:
+                gl0 = loss_func(v0[:, D:], g0) + loss_func(v0[:, :D], y0[:, D:])
+            tl0 = loss_func(model.step(X[:n0], t[:n0]), y[:n0])
+            # a near-identity init can make gl0 vanish; clamp so the ratio
+            # stays a balancing factor rather than an explosion
+            grad_w = float((tl0 / gl0.clamp(min=1e-12)).clamp(1e-3, 1e3))
+        print(f"Gradient loss weight (auto-balanced): {grad_w:.4g}")
+    elif gradient_weight != "auto":
+        grad_w = float(gradient_weight)
     for epoch in range(epochs):
-        y_pred = model.step(X, t)
-        loss = loss_func(y_pred, y)
-        if gradient_traj is not None:
-            observed_flattened = torch.flatten(gradient_traj, end_dim = -2)
-            input_flattened = torch.flatten(y, end_dim = -2)
-            dt = torch.zeros(1).requires_grad_(True)
-            gradH = grad(model.step(input_flattened, dt).sum(), dt, create_graph=True)[0]
-            gradient_loss = loss_func(gradH[..., : dims // 2], observed_flattened)
-        else:
-            gradient_loss = 0.0
-        if epoch % 100 == 0:
-            print(f"Trajectory Loss: {loss}")
-        # print(f"Gradient Loss: {gradient_loss}")
-        total_loss = gradient_loss + loss
-        # if early_stopper.early_stop(total_loss):             
-        #         break
-        # Before the backward pass, use the optimizer object to zero all of the
-        # gradients for the variables it will update (which are the learnable
-        # weights of the model). This is because by default, gradients are
-        # accumulated in buffers( i.e, not overwritten) whenever .backward()
-        # is called. Checkout docs of torch.autograd.backward for more details.
-        optimizer.zero_grad()
+        perm = torch.randperm(N, device=X.device)
+        epoch_loss, num_batches = 0.0, 0
+        for start in range(0, N, batch_size):
+            idx = perm[start:start + batch_size]
+            X_batch, y_batch, t_batch = X[idx], y[idx], t[idx]
+            y_pred = model.step(X_batch, t_batch)
+            loss = loss_func(y_pred, y_batch)
+            if gradient_traj is not None:
+                # gradient_traj: (N, D) — observed dp/dt = grad log p at output points.
+                # d(phi(x, t))/dt |_{t=0} gives the learned vector field at each
+                # output point. dt is a scalar, so forward-mode (one JVP pass)
+                # computes the full (B, 2D, 1) Jacobian; reverse-mode would
+                # need a backward per output element and OOMs on large batches.
+                velocity = jacfwd(lambda dt: model.step(y_batch, dt))(dt0).squeeze(-1)
+                g_batch = gradient_traj[idx]
+                if g_batch.shape[-1] == dims:
+                    # full (dq/dt, dp/dt) field observed (non-separable RMHMC)
+                    gradient_loss = loss_func(velocity, g_batch)
+                else:
+                    # separable case: dp/dt = grad log p is stored, and
+                    # dq/dt = p comes free from the trajectory itself
+                    gradient_loss = loss_func(velocity[:, D:], g_batch) \
+                        + loss_func(velocity[:, :D], y_batch[:, D:])
+            else:
+                gradient_loss = 0.0
+            total_loss = grad_w * gradient_loss + loss
 
-        # Backward pass: compute gradient of the loss with respect to model
-        # parameters
-        total_loss.backward()
+            optimizer.zero_grad()
+            total_loss.backward()
+            optimizer.step()
+            epoch_loss += float(total_loss.detach())
+            num_batches += 1
 
-        # Calling the step function on an Optimizer makes an update to its
-        # parameters
-        optimizer.step()
-    return model, epoch
+        epoch_loss /= max(num_batches, 1)
+        scheduler.step(epoch_loss)
+        if epoch % 20 == 0:
+            print(f"Epoch {epoch}: loss {epoch_loss:.6f}")
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        if early_stopper.early_stop(epoch_loss):
+            break
+    return _restore_best(model, best_state), epoch
 
+
+
+def create_training_set_symplectic_with_gradients(
+    X: torch.Tensor, G: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Like create_training_set_symplectic but also returns the gradient at the output point j.
+
+    G : (N, T, D//2) — gradient of U w.r.t. q at each trajectory step (dU/dq = -dp/dt).
+    Returns input, output, time, and gradient tensors aligned by pair (i, j).
+    """
+    N, T, D = X.shape
+    i, j = torch.triu_indices(T, T, offset=1)
+    K = i.shape[0]
+
+    input_tensor = X[:, i, :].reshape(N * K, D)
+    output_tensor = X[:, j, :].reshape(N * K, D)
+    grad_tensor = G[:, j, :].reshape(N * K, G.shape[-1])
+
+    time = j - i
+    time_tensor = torch.unsqueeze(torch.tile(time, dims=(N,)), dim=-1)
+    return input_tensor, output_tensor, time_tensor, grad_tensor
 
 
 def create_training_set_symplectic(X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

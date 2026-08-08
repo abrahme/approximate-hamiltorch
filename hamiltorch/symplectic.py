@@ -19,19 +19,19 @@ class SymplecticLinearBlock(nn.Module):
 
         self.channels = channels
 
-        self.bias = nn.ParameterList([nn.Parameter(torch.ones(self.dim)) for _ in range(self.channels)])
+        self.bias = nn.ParameterList([nn.Parameter(torch.zeros(self.dim)) for _ in range(self.channels)])
         self.A = nn.ModuleList([nn.Linear(self.param_dim,self.param_dim, bias = False) for _ in range(self.channels)])
         for layer in self.A:
             parametrize.register_parametrization(layer, "weight", parametrization=Symmetric())
-            nn.init.orthogonal_(layer.weight)
-        for bias in self.bias:
-            nn.init.normal_(bias)
+            # init the underlying (unparametrized) tensor — initializing
+            # layer.weight would only touch the symmetrized temporary
+            nn.init.orthogonal_(layer.parametrizations["weight"].original)
     def forward(self, z, dt) -> torch.Tensor:
         ### assume the first block is up, the second is down and they alternate
-        #### dt is the step size 
+        #### dt is the step size
         mode = "up"
-        
-        final_result = torch.matmul(z,torch.eye(self.dim))
+
+        final_result = z
         for bias, layer in zip(self.bias,self.A):
             q, p = torch.hsplit(final_result, 2)
             if mode == "up":
@@ -40,7 +40,20 @@ class SymplecticLinearBlock(nn.Module):
             elif mode == "down":
                 final_result = torch.cat([q, p + layer(q)*dt], -1) + bias * dt
                 mode = "up" ### alternate modes
-        return final_result 
+        return final_result
+
+    def inverse(self, z, dt) -> torch.Tensor:
+        # exact inverse: undo the channel shears in reverse order
+        modes = ["up", "down"] * (self.channels // 2)
+        final_result = z
+        for bias, layer, mode in reversed(list(zip(self.bias, self.A, modes))):
+            final_result = final_result - bias * dt
+            q, p = torch.hsplit(final_result, 2)
+            if mode == "up":
+                final_result = torch.cat([q - layer(p) * dt, p], -1)
+            else:
+                final_result = torch.cat([q, p - layer(q) * dt], -1)
+        return final_result
 
 class SymplecticActivation(nn.Module):
     def __init__(self, dim: int, mode: str) -> None:
@@ -52,7 +65,8 @@ class SymplecticActivation(nn.Module):
         self.param_dim = dim // 2
         self.activation = nn.SiLU()
         self.a = nn.Parameter(torch.ones(self.param_dim))
-        nn.init.normal_(self.a)
+        # small init keeps the map near the identity at initialization
+        nn.init.normal_(self.a, std=0.1)
     def forward(self, z, dt) -> torch.Tensor:
         q, p = torch.hsplit(z, 2)
         if self.mode == "up":
@@ -60,6 +74,15 @@ class SymplecticActivation(nn.Module):
         elif self.mode == "down":
             return torch.cat([dt*self.activation(p)*self.a + q, p], -1)
 
+        else:
+            return z
+
+    def inverse(self, z, dt) -> torch.Tensor:
+        q, p = torch.hsplit(z, 2)
+        if self.mode == "up":
+            return torch.cat([q, p - dt * self.activation(q) * self.a], -1)
+        elif self.mode == "down":
+            return torch.cat([q - dt * self.activation(p) * self.a, p], -1)
         else:
             return z
 
@@ -73,14 +96,35 @@ class LASymplecticBlock(nn.Module):
     def forward(self, z, dt) -> torch.Tensor:
         return self.activation_block(self.linear_block(z, dt), dt)
 
+    def inverse(self, z, dt) -> torch.Tensor:
+        return self.linear_block.inverse(self.activation_block.inverse(z, dt), dt)
+
 
 class SymplecticNeuralNetwork(nn.Module):
     def __init__(self, dim, activation_modes: list[str], channels: list[int]) -> None:
         super(SymplecticNeuralNetwork, self).__init__()
         self.layers = nn.ModuleList([LASymplecticBlock(dim, activation_mode, channel) for (activation_mode, channel) in zip (activation_modes, channels)])
+        # Each shear multiplies the state by roughly (1 + ||A||*dt); with
+        # orthogonal (unit-norm) init the full composition amplifies by
+        # (1 + dt)^n_shears — 7e11 at dt=1.5 for the default 64 shears, which
+        # destroys reversibility on targets with larger step sizes. Rescale so
+        # the composition starts near the identity regardless of depth.
+        n_shears = sum(len(block.linear_block.A) for block in self.layers)
+        if n_shears > 0:
+            with torch.no_grad():
+                for block in self.layers:
+                    for layer in block.linear_block.A:
+                        layer.parametrizations["weight"].original.mul_(1.0 / n_shears)
+                    for bias in block.linear_block.bias:
+                        bias.mul_(1.0 / n_shears)
     def step(self, z, dt) -> torch.Tensor:
         for layer in self.layers:
             z = layer(z, dt)
+        return z
+
+    def inverse(self, z, dt) -> torch.Tensor:
+        for layer in reversed(self.layers):
+            z = layer.inverse(z, dt)
         return z
 
     def forward(self, z, t):
@@ -89,7 +133,7 @@ class SymplecticNeuralNetwork(nn.Module):
         
         # forward_t = lambda t: self.step(z, t)
         # preds = torch.vmap(forward_t, out_dims=0)(t)
-        dts = torch.diff(t, prepend = torch.zeros(1))
+        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
         preds = []
         for dt in dts:
             z = self.step(z, dt)
@@ -113,7 +157,9 @@ class GSymplecticBlock(nn.Module):
         self.bias = nn.Parameter(torch.zeros(self.n))
 
         ### initialize
-        nn.init.normal_(self.a)
+        # small outer coefficients keep the map near the identity at init;
+        # normal bias inside the activation still breaks symmetry
+        nn.init.normal_(self.a, std=0.1)
         nn.init.normal_(self.bias)
         nn.init.orthogonal_(self.K)
     
@@ -132,6 +178,20 @@ class GSymplecticBlock(nn.Module):
         else:
             return z
 
+    def inverse(self, z, dt):
+        q, p = torch.hsplit(z, 2)
+        pre_activation_term = torch.transpose(self.K, 0, 1) * self.a
+        if self.mode == "up":
+            post_activation_term = self.activation(torch.einsum("ik,...k->...i", self.K, q) + self.bias)
+            multiplier = torch.einsum("ik,...k->...i", pre_activation_term, post_activation_term)
+            return torch.cat([q, p - dt * multiplier], -1)
+        elif self.mode == "down":
+            post_activation_term = self.activation(torch.einsum("ik,...k->...i", self.K, p) + self.bias)
+            multiplier = torch.einsum("ik,...k->...i", pre_activation_term, post_activation_term)
+            return torch.cat([q - dt * multiplier, p], -1)
+        else:
+            return z
+
 class GSymplecticNeuralNetwork(nn.Module):
     def __init__(self, dim, activation_modes: list[str], widths: list[int]) -> None:
         super(GSymplecticNeuralNetwork, self).__init__()
@@ -142,13 +202,18 @@ class GSymplecticNeuralNetwork(nn.Module):
             z = layer(z, dt)
         return z
 
+    def inverse(self, z, dt) -> torch.Tensor:
+        for layer in reversed(self.layers):
+            z = layer.inverse(z, dt)
+        return z
+
     def forward(self, z, t):
         ### here z is the initial position, and t is a tensor of variable times
         ### this predicts at each of the variable time
         
         # forward_t = lambda t: self.step(z, t)
         # preds = torch.vmap(forward_t, out_dims=0)(t)
-        dts = torch.diff(t, prepend = torch.zeros(1))
+        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
         preds = []
         for dt in dts:
             z = self.step(z, dt)
@@ -159,3 +224,37 @@ class GSymplecticNeuralNetwork(nn.Module):
 
 
 
+
+
+class TimeSymmetricSymplectic(nn.Module):
+    """Exactly momentum-reversible proposal built from an invertible symplectic net.
+
+    Psi_t = (R . Phi_{t/2}^{-1} . R) . Phi_{t/2} with R the momentum flip.
+    Then Psi_t^{-1} = R . Psi_t . R exactly, so an MH chain using Psi as its
+    proposal satisfies detailed balance regardless of how well Phi is trained.
+    If Phi equals the true (momentum-even) Hamiltonian flow, Psi_t = Phi_t.
+    """
+
+    def __init__(self, net) -> None:
+        super(TimeSymmetricSymplectic, self).__init__()
+        self.net = net
+
+    @staticmethod
+    def _flip(z):
+        D = z.shape[-1] // 2
+        return torch.cat([z[..., :D], -z[..., D:]], -1)
+
+    def step(self, z, dt) -> torch.Tensor:
+        half = dt * 0.5
+        z = self.net.step(z, half)
+        z = self._flip(z)
+        z = self.net.inverse(z, half)
+        return self._flip(z)
+
+    def forward(self, z, t):
+        dts = torch.diff(t, prepend=torch.zeros(1, device=t.device, dtype=t.dtype))
+        preds = []
+        for dt in dts:
+            z = self.step(z, dt)
+            preds.append(z)
+        return t, torch.stack(preds, axis=0)

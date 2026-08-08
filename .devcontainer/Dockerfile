@@ -27,6 +27,7 @@ RUN apt-get update && \
     apt-get clean -y && \
     rm -rf /var/lib/apt/lists/* /tmp/library-scripts
 
+
 #########################
 ### USER INSTALLATION ###
 #########################
@@ -56,6 +57,7 @@ RUN pip install \
         ################################################
         torchdyn \
         arviz \
+        termcolor \
         && \
     jupyter labextension enable nbgitpuller 
     
