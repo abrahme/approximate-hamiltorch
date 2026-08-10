@@ -1,18 +1,9 @@
-\begin{thebibliography}{12}
+\begin{thebibliography}{15}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
-
-\bibitem[Betancourt(2013)]{Betancourt_2013}
-Michael Betancourt.
-\newblock \emph{A General Metric for Riemannian Manifold Hamiltonian Monte
-  Carlo}, page 327–334.
-\newblock Springer Berlin Heidelberg, 2013.
-\newblock ISBN 9783642400209.
-\newblock \doi{10.1007/978-3-642-40020-9_35}.
-\newblock URL \url{http://dx.doi.org/10.1007/978-3-642-40020-9_35}.
 
 \bibitem[Brooks et~al.(2011)Brooks, Gelman, Jones, and Meng]{Brooks_2011}
 Steve Brooks, Andrew Gelman, Galin Jones, and Xiao-Li Meng.
@@ -21,6 +12,11 @@ Steve Brooks, Andrew Gelman, Galin Jones, and Xiao-Li Meng.
 \newblock ISBN 9780429138508.
 \newblock \doi{10.1201/b10905}.
 \newblock URL \url{http://dx.doi.org/10.1201/b10905}.
+
+\bibitem[Chen et~al.(2019)Chen, Rubanova, Bettencourt, and
+  Duvenaud]{chen2019neural}
+Ricky T.~Q. Chen, Yulia Rubanova, Jesse Bettencourt, and David Duvenaud.
+\newblock Neural ordinary differential equations, 2019.
 
 \bibitem[Dhulipala et~al.(2023)Dhulipala, Che, and
   Shields]{DHULIPALA2023112425}
@@ -39,6 +35,11 @@ Peter~J. Green.
   model determination.
 \newblock \emph{Biometrika}, 82\penalty0 (4):\penalty0 711--732, 1995.
 
+\bibitem[Greydanus et~al.(2019)Greydanus, Dzamba, and
+  Yosinski]{greydanus2019hamiltonian}
+Sam Greydanus, Misko Dzamba, and Jason Yosinski.
+\newblock Hamiltonian neural networks, 2019.
+
 \bibitem[Hairer et~al.(2006)Hairer, Lubich, and Wanner]{HairerLubichWanner}
 Ernst Hairer, Christian Lubich, and Gerhard Wanner.
 \newblock \emph{Geometric Numerical Integration: Structure-Preserving
@@ -50,6 +51,14 @@ Ernst Hairer, Christian Lubich, and Gerhard Wanner.
 Matthew~D. Hoffman and Andrew Gelman.
 \newblock The no-u-turn sampler: Adaptively setting path lengths in hamiltonian
   monte carlo, 2011.
+
+\bibitem[Hoffman et~al.(2021)Hoffman, Radul, and Sountsov]{hoffman2021adaptive}
+Matthew~D. Hoffman, Alexey Radul, and Pavel Sountsov.
+\newblock An adaptive-mcmc scheme for setting trajectory lengths in hamiltonian
+  monte carlo.
+\newblock In \emph{Proceedings of the 24th International Conference on
+  Artificial Intelligence and Statistics}, volume 130 of \emph{Proceedings of
+  Machine Learning Research}. PMLR, 2021.
 
 \bibitem[Jin et~al.(2020)Jin, Zhang, Zhu, Tang, and
   Karniadakis]{jin2020sympnets}
@@ -75,19 +84,24 @@ Lingge Li, Andrew Holbrook, Babak Shahbaba, and Pierre Baldi.
 Jiaming Song, Shengjia Zhao, and Stefano Ermon.
 \newblock A-nice-mc: Adversarial training for mcmc, 2017.
 
-\bibitem[Tao(2016)]{Tao_2016}
-Molei Tao.
-\newblock Explicit symplectic approximation of nonseparable hamiltonians:
-  Algorithm and long time performance.
-\newblock \emph{Physical Review E}, 94\penalty0 (4), October 2016.
-\newblock ISSN 2470-0053.
-\newblock \doi{10.1103/physreve.94.043303}.
-\newblock URL \url{http://dx.doi.org/10.1103/PhysRevE.94.043303}.
+\bibitem[Spanbauer et~al.(2020)Spanbauer, Freer, and
+  Mansinghka]{spanbauer2020involutive}
+Span Spanbauer, Cameron Freer, and Vikash Mansinghka.
+\newblock Deep involutive generative models for neural mcmc, 2020.
 
 \bibitem[Tierney(1998)]{Tierney1998}
 Luke Tierney.
 \newblock A note on metropolis-hastings kernels for general state spaces.
 \newblock \emph{The Annals of Applied Probability}, 8\penalty0 (1):\penalty0
   1--9, 1998.
+
+\bibitem[Valperga et~al.(2022)Valperga, Webster, Turaev, Klein, and
+  Lamb]{valperga2022reversible}
+Riccardo Valperga, Kevin Webster, Dmitry Turaev, Victoria Klein, and Jeroen
+  Lamb.
+\newblock Learning reversible symplectic dynamics.
+\newblock In \emph{Proceedings of The 4th Annual Learning for Dynamics and
+  Control Conference}, volume 168 of \emph{Proceedings of Machine Learning
+  Research}, pages 906--916. PMLR, 2022.
 
 \end{thebibliography}

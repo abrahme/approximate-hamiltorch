@@ -44,7 +44,7 @@ def _chain_lengths(experiment_params):
 
 hamiltorch.set_random_seed(13)
 scales = 100 * torch.rand(30)
-_gp_log_prob = make_gp_regression_log_prob(num_data=200)
+_gp_log_prob = make_gp_regression_log_prob(num_data=500, num_features=4)
 experiment_hyperparams = {
     "banana": {
         "step_size": .1, "L": 5, "burn": 3000, "N": 6000,
@@ -70,9 +70,12 @@ experiment_hyperparams = {
         "log_prob": lambda omega: normal_normal_conjugate(omega),
         "grad_func": lambda p: params_grad(p, normal_normal_conjugate),
     },
+    # matches Li et al. (2019): eps = .05, L = 20, 10k samples, n = 500
     "gp_regression": {
-        "step_size": .05, "L": 5, "burn": 1500, "N": 3000,
-        "params_init": torch.zeros(3),
+        "step_size": .05, "L": 20, "burn": 2000, "N": 10000,
+        # start near the posterior mode (log l = 0, log noise = log 0.1); from
+        # the origin the initial gradient is ~140 and the chain diverges
+        "params_init": torch.Tensor([0., -2.3]),
         "log_prob": _gp_log_prob,
         "grad_func": lambda p: params_grad(p, _gp_log_prob),
     },
@@ -86,7 +89,7 @@ experiment_hyperparams = {
 
 
 def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
-                   is_analytic=False, a=None, device="cuda"):
+                   is_analytic=False, a=None, device="cuda", pair_mode="all"):
     hamiltorch.set_random_seed(123)
     print(f"Running experiment for: solver: {solver}, sensitivity: {sensitivity}, "
           f"distribution: {distribution}, model: {model_type}")
@@ -159,7 +162,8 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
                         else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a))
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
                                  dim=dim, base_sampler=base_sampler, model_type="LA")
-        sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS)
+        sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS,
+                                 pair_mode=pair_mode)
         params_out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
         return params_out, sampler.model, None
 
@@ -169,7 +173,8 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
                         else HMCGaussianAnalytic(step_size=step_size, L=L, log_prob_func=log_prob, dim=dim, a=a))
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
                                  dim=dim, base_sampler=base_sampler, model_type="GSymp")
-        sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS)
+        sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS,
+                                 pair_mode=pair_mode)
         params_out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
         return params_out, sampler.model, None
 
@@ -180,7 +185,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
                                  dim=dim, base_sampler=base_sampler, model_type="LA")
         sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS,
-                                  use_gradient=True)
+                                  use_gradient=True, pair_mode=pair_mode)
         params_out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
         return params_out, sampler.model, None
 
@@ -191,7 +196,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
                                  dim=dim, base_sampler=base_sampler, model_type="GSymp")
         sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS,
-                                  use_gradient=True)
+                                  use_gradient=True, pair_mode=pair_mode)
         params_out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
         return params_out, sampler.model, None
 
@@ -203,7 +208,7 @@ def run_experiment(model_type, sensitivity, distribution, solver, percent=1,
         sampler = SymplecticHMC(step_size=step_size, L=L, log_prob_func=log_prob,
                                  dim=dim, base_sampler=base_sampler, model_type="RevGSymp")
         sampler.create_surrogate(q_init=params_init, burn=int(burn * percent), epochs=SNN_EPOCHS,
-                                  use_gradient=model_type.startswith("RevGrad"))
+                                  use_gradient=model_type.startswith("RevGrad"), pair_mode=pair_mode)
         params_out, _, _, _ = sampler.sample(num_samples=N - int(burn * percent), q_init=None)
         return params_out, sampler.model, None
 
@@ -273,17 +278,21 @@ def snn_gradient_ablation_experiment(device: str = "cuda"):
 
 
 def surrogate_neural_ode_hmc_sample_size_experiment(device="cuda", distributions=None,
-                                                    output_csv="experiments/diagnostic_results.csv"):
+                                                    output_csv="experiments/diagnostic_results.csv",
+                                                    percents=None, models=None,
+                                                    pair_mode="all"):
     if distributions is None:
         distributions = ["banana", "gaussian", "high_dimensional_gaussian", "normal_normal"]
     sensitivities = ["autograd"]
     solvers = ["SynchronousLeapfrog"]
-    models = [
-        "HMC", "NNgHMC", "NNODEgHMC", "Explicit NNODEgHMC",
-        "SymplecticNNgHMC", "GSymplecticNNgHMC",
-        "GradSymplecticNNgHMC", "GradGSymplecticNNgHMC",
-    ]
-    percent_of_warmup = [1.0] if SMOKE else np.linspace(0.1, 1, 10)
+    if models is None:
+        models = [
+            "HMC", "NNgHMC", "NNODEgHMC", "Explicit NNODEgHMC",
+            "SymplecticNNgHMC", "GSymplecticNNgHMC",
+            "GradSymplecticNNgHMC", "GradGSymplecticNNgHMC",
+        ]
+    percent_of_warmup = ([1.0] if SMOKE
+                         else (percents if percents is not None else np.linspace(0.1, 1, 10)))
     error_list = []
 
     for percent in percent_of_warmup:
@@ -294,7 +303,8 @@ def surrogate_neural_ode_hmc_sample_size_experiment(device="cuda", distributions
                     for model in models:
                         start = time.time()
                         experiment_samples, experiment_model, _ = run_experiment(
-                            model, sensitivity, distribution, solver, percent, device=device
+                            model, sensitivity, distribution, solver, percent, device=device,
+                            pair_mode=pair_mode
                         )
                         model_dict[model] = {
                             "samples": experiment_samples[:, -1, :].detach(),
@@ -351,12 +361,21 @@ def surrogate_neural_ode_hmc_sample_size_experiment(device="cuda", distributions
     pd.DataFrame(error_list).to_csv(output_csv, index=False)
 
 
-def gp_sample_size_experiment(device="cuda"):
+def gp_sample_size_experiment(device="cuda", percents=None):
+    """GP benchmark. Includes the symmetrized flow map trained with endpoint
+    pairs, which is the configuration trajectory_length identifies as the one
+    that actually wins; the plain SympNets are retained only to show that their
+    high ESS coexists with a reversibility error of order 1e9."""
     """Sample-size sweep on an expensive-likelihood target (GP regression
     hyperparameters, O(N^3) per gradient): the regime surrogate HMC targets."""
     surrogate_neural_ode_hmc_sample_size_experiment(
         device=device, distributions=["gp_regression"],
-        output_csv="experiments/diagnostic_results_gp.csv")
+        output_csv="experiments/diagnostic_results_gp.csv",
+        percents=percents if percents is not None else [0.1, 0.4, 0.7, 1.0],
+        models=["HMC", "NNgHMC", "NNODEgHMC", "Explicit NNODEgHMC",
+                "GSymplecticNNgHMC", "RevGSymplecticNNgHMC",
+                "RevGradGSymplecticNNgHMC"],
+        pair_mode="endpoint")
 
 
 def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
@@ -679,3 +698,92 @@ def symmetrization_control_experiment(device: str = "cuda"):
                 })
     pd.DataFrame(rows).to_csv("experiments/symmetrization_control.csv", index=False)
     print("Symmetrization control saved to experiments/symmetrization_control.csv")
+
+
+# ── Cost scaling: pair construction and trajectory length ───────────────────
+
+def pair_mode_experiment(device: str = "cuda"):
+    """Is the O(L^2) pair construction necessary?
+
+    The sampler queries the flow map only at tau = L*eps, so in principle
+    training needs only the (x_0, x_L) pair per trajectory. This measures what
+    the extra offsets buy, across trajectory lengths where the distinction
+    matters for cost.
+    """
+    lengths = [5] if SMOKE else [5, 25, 50]
+    modes = ["all", "from_start", "endpoint"]
+    distribution = "gaussian"
+    hp = dict(experiment_hyperparams[distribution])
+    rows = []
+    for L in lengths:
+        for mode in modes:
+            hamiltorch.set_random_seed(123)
+            log_prob = hp["log_prob"]
+            params_init = hp["params_init"].to(device)
+            dim = params_init.shape[0]
+            eps = hp["step_size"]
+            burn, N = (20, 40) if SMOKE else (600, 1200)
+            base = HMC(step_size=eps, L=L, log_prob_func=log_prob, dim=dim)
+            sampler = SymplecticHMC(step_size=eps, L=L, log_prob_func=log_prob,
+                                    dim=dim, base_sampler=base, model_type="RevGSymp")
+            t0 = time.time()
+            sampler.create_surrogate(q_init=params_init, burn=burn, epochs=SNN_EPOCHS,
+                                     pair_mode=mode)
+            train_time = time.time() - t0
+            t1 = time.time()
+            out, _, _, _ = sampler.sample(num_samples=N - burn, q_init=None)
+            sample_time = time.time() - t1
+            samples = out[:, -1, :].detach()
+            hamiltorch.set_random_seed(1)
+            n_eval = min(50, samples.shape[0])
+            init = torch.cat([
+                samples[torch.multinomial(torch.ones(samples.shape[0]), n_eval, replacement=False)],
+                torch.distributions.Normal(0, 1).sample(sample_shape=(n_eval, dim))], -1)
+            err, _, _ = compute_reversibility_error(
+                sampler.model, init, t=torch.linspace(0, L * eps, L + 1))
+            pairs_per_traj = {"all": L * (L + 1) // 2, "from_start": L, "endpoint": 1}[mode]
+            rows.append({
+                "L": L, "pair_mode": mode,
+                "pairs_per_traj": pairs_per_traj,
+                "total_pairs": pairs_per_traj * burn,
+                "train_time": train_time, "sample_time": sample_time,
+                "reversibility_error": err.detach().cpu().numpy(),
+                "ess": _compute_ess(samples),
+            })
+            print(f"  L={L} mode={mode}: {pairs_per_traj} pairs/traj, "
+                  f"train {train_time:.1f}s, ESS {rows[-1]['ess']:.1f}")
+    pd.DataFrame(rows).to_csv("experiments/pair_mode.csv", index=False)
+    print("Pair-mode results saved to experiments/pair_mode.csv")
+
+
+def trajectory_length_experiment(device: str = "cuda"):
+    """Per-proposal cost of a flow-map surrogate is O(1) in L; integrator-based
+    surrogates are O(L). This measures ESS/s for both as L grows."""
+    lengths = [5] if SMOKE else [5, 25, 50, 100]
+    # (label, model, pair_mode) — the flow map is run under both pair
+    # constructions, since the O(L^2) one both costs more and fits worse
+    arms = [("HMC", "HMC", "all"),
+            ("NNODEgHMC", "NNODEgHMC", "all"),
+            ("RevSympNet[all]", "RevGSymplecticNNgHMC", "all"),
+            ("RevSympNet[endpoint]", "RevGSymplecticNNgHMC", "endpoint")]
+    distribution = "gaussian"
+    rows = []
+    for L in lengths:
+        # temporarily override L for this target
+        saved = experiment_hyperparams[distribution]["L"]
+        experiment_hyperparams[distribution]["L"] = L
+        try:
+            for label, model, pmode in arms:
+                start = time.time()
+                samples, _, _ = run_experiment(model, "autograd", distribution,
+                                               SynchronousLeapfrog(), 1.0, device=device,
+                                               pair_mode=pmode)
+                elapsed = time.time() - start
+                e = _compute_ess(samples[:, -1, :].detach())
+                rows.append({"L": L, "model": label, "pair_mode": pmode, "ess": e,
+                             "time": elapsed, "ess_per_sec": e / max(elapsed, 1e-9)})
+                print(f"  L={L} {label}: ESS {e:.1f}, {elapsed:.1f}s, ESS/s {e/max(elapsed,1e-9):.2f}")
+        finally:
+            experiment_hyperparams[distribution]["L"] = saved
+    pd.DataFrame(rows).to_csv("experiments/trajectory_length.csv", index=False)
+    print("Trajectory-length results saved to experiments/trajectory_length.csv")

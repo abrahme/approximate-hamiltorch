@@ -443,8 +443,27 @@ def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwo
 
 
 
+def _symplectic_pair_indices(T, pair_mode):
+    """Index pairs (i, j), i < j, used to build flow-map training data.
+
+    The sampler only ever queries phi(., L*eps), so the full O(L^2) set of
+    offsets is not required to fit the map it actually uses.
+
+      "all"        — every (i, j): O(L^2) pairs, learns phi at all offsets
+      "from_start" — (0, j) for all j: O(L) pairs, all offsets from x_0
+      "endpoint"   — (0, L) only: O(1) pairs, exactly the sampled offset
+    """
+    if pair_mode == "all":
+        return torch.triu_indices(T, T, offset=1)
+    if pair_mode == "from_start":
+        return torch.zeros(T - 1, dtype=torch.long), torch.arange(1, T)
+    if pair_mode == "endpoint":
+        return torch.zeros(1, dtype=torch.long), torch.tensor([T - 1])
+    raise ValueError(f"Unknown pair_mode: {pair_mode}")
+
+
 def create_training_set_symplectic_with_gradients(
-    X: torch.Tensor, G: torch.Tensor
+    X: torch.Tensor, G: torch.Tensor, pair_mode: str = "all"
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Like create_training_set_symplectic but also returns the gradient at the output point j.
 
@@ -452,7 +471,7 @@ def create_training_set_symplectic_with_gradients(
     Returns input, output, time, and gradient tensors aligned by pair (i, j).
     """
     N, T, D = X.shape
-    i, j = torch.triu_indices(T, T, offset=1)
+    i, j = _symplectic_pair_indices(T, pair_mode)
     K = i.shape[0]
 
     input_tensor = X[:, i, :].reshape(N * K, D)
@@ -464,11 +483,10 @@ def create_training_set_symplectic_with_gradients(
     return input_tensor, output_tensor, time_tensor, grad_tensor
 
 
-def create_training_set_symplectic(X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def create_training_set_symplectic(X: torch.Tensor, pair_mode: str = "all") -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     N, T, D = X.shape
 
-    # Generate all combinations of pairs (i, j) such that i < j
-    i, j = torch.triu_indices(T, T, offset=1)
+    i, j = _symplectic_pair_indices(T, pair_mode)
     # Calculate the number of pairs
     K = i.shape[0]
 

@@ -5,7 +5,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", required=True,
                         choices=["sample_size", "sample_size_analytic", "snn_ablation",
-                                 "rmhmc", "gp", "symmetry_control", "plot_ess"],
+                                 "rmhmc", "gp", "symmetry_control", "pair_mode", "traj_length", "plot_ess"],
                         help="Which experiment or plot to run")
     parser.add_argument("--device", default="cpu", help="Compute device (cpu, cuda, mps:0)")
     parser.add_argument("--smoke", action="store_true",
@@ -26,6 +26,8 @@ if __name__ == "__main__":
         rmhmc_experiment,
         gp_sample_size_experiment,
         symmetrization_control_experiment,
+        pair_mode_experiment,
+        trajectory_length_experiment,
     )
     from hamiltorch.plot_utils import plot_ess_vs_training_size
 
@@ -41,6 +43,10 @@ if __name__ == "__main__":
         gp_sample_size_experiment(args.device)
     elif args.experiment == "symmetry_control":
         symmetrization_control_experiment(args.device)
+    elif args.experiment == "pair_mode":
+        pair_mode_experiment(args.device)
+    elif args.experiment == "traj_length":
+        trajectory_length_experiment(args.device)
     elif args.experiment == "plot_ess":
         plot_ess_vs_training_size(
             csv_path="experiments/diagnostic_results.csv",
