@@ -2,8 +2,13 @@
 # run_experiments.sh — Run all surrogate HMC/RMHMC experiments and generate figures.
 #
 # Usage:
-#   bash run_experiments.sh [--device <cpu|cuda|mps:0>] [--smoke]
-#                           [--skip-analytic] [--skip-rmhmc] [--no-container]
+#   HAMILTORCH_GPU=<idx> bash run_experiments.sh [--device <cpu|cuda|mps:0>]
+#                           [--smoke] [--skip-analytic] [--skip-rmhmc]
+#                           [--skip-gp] [--no-container]
+#
+# HAMILTORCH_GPU selects which physical GPU to attach (default 0). Pin this when
+# another job is using the machine, otherwise wall-clock timings — and hence
+# every ESS/s number — are contaminated by contention.
 #
 # By default, when this script is invoked on the host and the
 # localhost/approximate-hamiltorch container image is available, it re-executes
@@ -54,7 +59,7 @@ if [[ "$IN_CONTAINER" -eq 0 && "$NO_CONTAINER" -eq 0 ]] \
     exec podman run --rm \
         --user=1000:100 \
         --userns=keep-id:uid=1000,gid=100 \
-        --device=nvidia.com/gpu=all \
+        --device=nvidia.com/gpu="${HAMILTORCH_GPU:-0}" \
         --security-opt=label=disable \
         -e HAMILTORCH_IN_CONTAINER=1 \
         -v "$REPO_DIR":/home/jovyan/work:z \

@@ -398,7 +398,7 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler, model_type)
 
     def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int, use_gradient: bool = False,
-                         n_blocks: int = 8):
+                         n_blocks: int = 8, pair_mode: str = "all"):
         """n_blocks sets the depth of the underlying symplectic net. Note the
         time-symmetric wrapper applies that net twice, so a Rev model with
         n_blocks has the same *effective* depth as a plain model with
@@ -423,10 +423,10 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         # grad log p for a non-separable Hamiltonian), so fall back silently
         if use_gradient and grad_examples is not None:
             X, y, t, gradient_traj = create_training_set_symplectic_with_gradients(
-                input_trajectories, grad_examples.detach()
+                input_trajectories, grad_examples.detach(), pair_mode=pair_mode
             )
         else:
-            X, y, t = create_training_set_symplectic(input_trajectories)
+            X, y, t = create_training_set_symplectic(input_trajectories, pair_mode=pair_mode)
         self.model, _ = train_symplectic(model, X=X, y=y, t=t * self.step_size,
                                          epochs=epochs, gradient_traj=gradient_traj)
         self.burn_state = param_examples[-1, -1, :].detach()
