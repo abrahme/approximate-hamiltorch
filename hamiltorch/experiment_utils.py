@@ -88,15 +88,21 @@ def funnel_log_prob(w):
     """Neal's funnel (2-D): v ~ N(0, 9), x ~ N(0, e^v).
 
     The canonical target where position-dependent curvature defeats plain HMC
-    and Riemannian methods shine. The conditional scale exp(v/2) underflows to
-    zero for strongly negative v, which would raise rather than be rejected, so
-    it is floored and non-finite values are surfaced as LogProbError for the
-    sampler to reject.
+    and Riemannian methods shine. The densities are written analytically rather
+    than via torch.distributions: the conditional scale exp(v/2) underflows and
+    v itself can leave the reals under an aggressive proposal, and the
+    distribution classes validate their arguments and *raise* on both, which
+    kills the chain instead of rejecting the draw. Non-finite values are
+    surfaced as LogProbError so the sampler rejects them.
     """
+    if not torch.isfinite(w).all():
+        raise util.LogProbError()
     v, x = w[..., 0], w[..., 1]
-    ll = torch.distributions.Normal(0., 3.).log_prob(v)
-    scale = torch.exp(v / 2).clamp(min=1e-12)
-    ll = ll + torch.distributions.Normal(0., scale).log_prob(x)
+    half_log_2pi = 0.5 * math.log(2.0 * math.pi)
+    # log N(v; 0, 3)
+    ll = -0.5 * (v / 3.0) ** 2 - math.log(3.0) - half_log_2pi
+    # log N(x; 0, exp(v/2)) = -x^2 e^{-v} / 2 - v/2 - log sqrt(2 pi)
+    ll = ll - 0.5 * torch.square(x) * torch.exp(-v) - 0.5 * v - half_log_2pi
     if not torch.isfinite(ll).all():
         raise util.LogProbError()
     return ll.sum()

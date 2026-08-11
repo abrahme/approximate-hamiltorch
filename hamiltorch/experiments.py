@@ -473,11 +473,14 @@ rmhmc_experiment_hyperparams = {
         "log_prob": lambda omega: normal_normal_conjugate(omega),
         "softabs_const": 1e1,
     },
+    # calibrated: at eps=.1 the chain diverges (v reaches 38 against a true
+    # range of about +/-9) and acceptance falls to 0.28; eps=.05 with a harder
+    # softabs regularization gives 0.85
     "funnel": {
-        "step_size": .1, "L": 5, "burn": 300, "N": 600,
+        "step_size": .05, "L": 5, "burn": 300, "N": 600,
         "params_init": torch.Tensor([0., 1.]),
         "log_prob": funnel_log_prob,
-        "softabs_const": 1e1,
+        "softabs_const": 1e3,
     },
 }
 
@@ -512,7 +515,7 @@ def run_rmhmc_experiment(model_type, distribution, percent=1, device="cuda"):
             rows = []
             for row in x:
                 try:
-                    qs, ps, _ = base_sampler.step(row[..., :dim], row[..., dim:])
+                    qs, ps, _, _, _ = base_sampler.step(row[..., :dim], row[..., dim:])
                     rows.append(torch.cat([qs, ps], -1))
                 except hamiltorch.util.LogProbError:
                     # diverged trajectory: freeze the row at its initial state
@@ -580,8 +583,10 @@ def rmhmc_experiment(device: str = "cuda"):
                                  log_prob_func=hp["log_prob"],
                                  dim=true_samples.shape[-1],
                                  softabs_const=hp["softabs_const"])
+            # the diagnostics evaluate maps on (q, p), so momenta come from the
+            # original conditional p ~ N(0, G(q)), not the extended-state draw
             initial_momentum = torch.stack(
-                [diag_sampler.gibbs(q) for q in initial_positions]
+                [diag_sampler.gibbs_marginal(q) for q in initial_positions]
             )
             initial_conditions = torch.cat([initial_positions, initial_momentum], -1)
 
