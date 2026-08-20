@@ -6,7 +6,8 @@ from hamiltorch.symplectic import (
     SymplecticNeuralNetwork, GSymplecticNeuralNetwork, TimeSymmetricSymplectic,
 )
 from hamiltorch.experiment_utils import (banana_log_prob, funnel_log_prob,
-                                        make_gp_regression_log_prob, normal_normal_conjugate)
+                                        make_gp_regression_log_prob, normal_normal_conjugate,
+                                        normalised_energy_distance)
 
 
 class LeapfrogTrajectoryTestCase(unittest.TestCase):
@@ -267,6 +268,41 @@ class ExtendedRMHMCTestCase(unittest.TestCase):
         sd = traj[:, -1, :].detach()[200:].std(0)
         # a chain targeting exp(-Hbar) instead would land near true_sd/sqrt(2)
         self.assertLess(float((sd - true_sd).abs().max()), 0.15)
+
+
+class DistributionErrorTestCase(unittest.TestCase):
+    """The correctness metric must separate distributions that ESS cannot.
+
+    A map with a large involution defect yields weakly autocorrelated draws, so
+    ESS reads high while the samples come from the wrong distribution. The
+    energy distance is the check that catches it.
+    """
+
+    def setUp(self):
+        torch.set_default_dtype(torch.float64)
+        torch.manual_seed(0)
+        self.sd = torch.tensor([0.5, 1.0, 2.0])
+        self.ref = torch.randn(1500, 3) * self.sd
+
+    def tearDown(self):
+        torch.set_default_dtype(torch.float32)
+
+    def _draw(self, n=1500):
+        return torch.randn(n, 3) * self.sd
+
+    def test_zero_for_the_same_distribution(self):
+        self.assertLess(normalised_energy_distance(self._draw(), self.ref), 0.02)
+
+    def test_detects_the_contracted_marginal(self):
+        # the 1/sqrt(2) contraction produced by targeting exp(-Hbar) instead
+        # of exp(-Hbar/2) in the extended RMHMC formulation
+        contracted = self._draw() / (2 ** 0.5)
+        self.assertGreater(normalised_energy_distance(contracted, self.ref), 0.015)
+
+    def test_detects_the_split_support_artifact(self):
+        # what an unsymmetrized SympNet actually produces: two lobes, hole at the mode
+        bimodal = torch.cat([self._draw(750) - 2.0, self._draw(750) + 2.0])
+        self.assertGreater(normalised_energy_distance(bimodal, self.ref), 0.2)
 
 
 if __name__ == "__main__":

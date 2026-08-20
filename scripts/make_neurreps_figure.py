@@ -1,4 +1,4 @@
-import csv, numpy as np, matplotlib
+import csv, os, numpy as np, matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -72,6 +72,11 @@ for s in ("top", "right"): axB.spines[s].set_visible(False)
 axB.legend(frameon=False, loc="lower left", handlelength=2.6)
 
 plt.tight_layout()
-plt.savefig("paper_neurreps/results.pdf", bbox_inches="tight")
-plt.savefig("paper_neurreps/results.png", dpi=200, bbox_inches="tight")
-print("wrote paper_neurreps/results.pdf (+ .png preview)")
+# Write next to the paper when building it, otherwise into figures/ — the code
+# archive ships without the paper directory.
+outdir = os.environ.get("NEURREPS_FIGDIR") or (
+    "paper_neurreps" if os.path.isdir("paper_neurreps") else "figures")
+os.makedirs(outdir, exist_ok=True)
+plt.savefig(os.path.join(outdir, "results.pdf"), bbox_inches="tight")
+plt.savefig(os.path.join(outdir, "results.png"), dpi=200, bbox_inches="tight")
+print(f"wrote {outdir}/results.pdf (+ .png preview)")

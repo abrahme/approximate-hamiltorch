@@ -186,3 +186,53 @@ def compute_rm_hamiltonian_error(model, test_initial_conditions, t, rm_hamiltoni
     if not errors:
         return torch.tensor(float("nan"))
     return torch.stack(errors).mean()
+
+
+def energy_distance(x, y, max_n=600, seed=0):
+    """Two-sample energy distance between sample sets x and y.
+
+    E = 2 E|X-Y| - E|X-X'| - E|Y-Y'|, which is zero if and only if the two
+    distributions coincide. It is parameter-free (no kernel bandwidth), works
+    in any dimension, and needs only pairwise distances.
+
+    This exists because effective sample size cannot certify a sampler. A map
+    with a large involution defect produces weakly autocorrelated paths --- ESS
+    reads high --- while targeting the wrong distribution; we measured a
+    surrogate posting 158 ESS/s against exact HMC's 48 at a reversibility error
+    of 7e8. ESS measures autocorrelation, not correctness, so any reported ESS
+    for a learned proposal needs a distributional check beside it.
+
+    Both sample sets are subsampled to at most max_n rows to keep the O(n^2)
+    distance matrices cheap; the estimator is unbiased under subsampling.
+    """
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    def _prep(a):
+        a = a.detach().cpu()
+        if a.shape[0] > max_n:
+            idx = torch.randperm(a.shape[0], generator=g)[:max_n]
+            a = a[idx]
+        return a.double()
+    x, y = _prep(x), _prep(y)
+    if not (torch.isfinite(x).all() and torch.isfinite(y).all()):
+        return float("nan")
+    d_xy = torch.cdist(x, y).mean()
+    d_xx = torch.cdist(x, x).mean()
+    d_yy = torch.cdist(y, y).mean()
+    return float(2 * d_xy - d_xx - d_yy)
+
+
+def normalised_energy_distance(x, y, **kw):
+    """Energy distance scaled by the reference set's own spread.
+
+    The raw statistic carries the units of the target, so it is not comparable
+    across the distributions in a sweep. Dividing by E|Y-Y'| gives a
+    dimensionless number: 0 means the samples are indistinguishable from the
+    reference, and order 1 means they are as far from it as two independent
+    draws from the reference are from each other.
+    """
+    raw = energy_distance(x, y, **kw)
+    if raw != raw:
+        return float("nan")
+    y_ = y.detach().cpu().double()
+    scale = float(torch.cdist(y_, y_).mean())
+    return raw / scale if scale > 0 else float("nan")

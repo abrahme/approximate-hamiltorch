@@ -8,9 +8,10 @@
 \label{sec:symmetrization}
 
 Symplectic Neural Networks are symplectic by construction, and therefore
-volume preserving. We show that this is \emph{not} sufficient for them to
-serve as a valid Hamiltonian Monte Carlo proposal, and give a construction
-that repairs the deficiency exactly, at no cost in parameters.
+volume preserving. Volume preservation is only one of the two conditions a
+Metropolis proposal requires, so a learned flow map is not admissible as it
+stands. We set out what the remaining condition is and give a construction that
+supplies it exactly, at no cost in parameters.
 
 \subsubsection{Validity conditions for a deterministic proposal}
 
@@ -116,11 +117,15 @@ is not connected to sampling. Enforcing exact invertibility so that a learned
 proposal admits a tractable reverse move is likewise established in the
 neural-MCMC literature \cite{song2017nice, levy2018generalizing}, and
 \cite{spanbauer2020involutive} give a general construction from
-volume-preserving involutions. What we add is the observation that SNN
-surrogates for HMC require this structure --- they supply \eqref{eq:vol} but
-violate \eqref{eq:inv}, so the resulting chain is not asymptotically exact ---
-together with closed-form layer inverses that make \eqref{eq:psi} exact for the
-LA- and G-SympNet architectures.
+volume-preserving involutions. What we add is the proposal itself: to our
+knowledge symplectic networks have not previously been used as MCMC proposals,
+the surrogate literature learning fields inside integrators and the
+symplectic-network literature predicting dynamics. The requirement identified
+here is therefore a design constraint on the construction we propose --- a
+learned flow map supplies \eqref{eq:vol} but not \eqref{eq:inv}, so it is not
+admissible as it stands --- rather than a correction to published work. We
+accompany it with closed-form layer inverses that make \eqref{eq:psi} exact for
+the LA- and G-SympNet architectures.
 
 \subsubsection{Interpretation and cost}
 

@@ -354,6 +354,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         accepted = []
         param_trajectories = []
         momentum_trajectories = []
+        traj_rows = None
         util.progress_bar_init('Sampling ({}; {})'.format("HMC", "Leapfrog"), num_samples, 'Samples')
         for n in range(num_samples):
             util.progress_bar_update(n)
@@ -362,6 +363,10 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                 ham = self.hamiltonian(params, momentum)
 
                 leapfrog_params, leapfrog_momenta = self.step(params, momentum)
+                # remember the trajectory shape: a flow-map surrogate returns a
+                # single row, an integrator-based one returns L+1, and the
+                # LogProbError branch must match whichever this sampler produces
+                traj_rows = leapfrog_params.shape[0]
                 proposed_params = leapfrog_params[-1].to(device).detach().requires_grad_()
                 proposed_momentum = leapfrog_momenta[-1].to(device)
                 new_ham = self.hamiltonian(proposed_params, proposed_momentum)
@@ -387,7 +392,8 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                 num_rejected += 1
                 params = param_burn_prev.clone().requires_grad_()
                 accepted.append(0.0)
-                frozen = param_burn_prev.unsqueeze(0).expand(self.L + 1, -1).clone()
+                rows = traj_rows if traj_rows is not None else self.L + 1
+                frozen = param_burn_prev.unsqueeze(0).expand(rows, -1).clone()
                 param_trajectories.append(frozen)
                 momentum_trajectories.append(torch.zeros_like(frozen))
 
@@ -656,8 +662,22 @@ class RMHMC(HMCBase):
         return (torch.stack(ret_q, 0), torch.stack(ret_p, 0),
                 torch.stack(ret_field, 0), qb, pb)
 
-    def sample(self, q_init, grad_func=None, num_samples=1000):
-        """MH-within-Gibbs on the extended state (q, p, qb, pb)."""
+    def sample(self, q_init, grad_func=None, num_samples=1000,
+               functional_trajectories=False):
+        """MH-within-Gibbs on the extended state (q, p, qb, pb).
+
+        `functional_trajectories` controls what gets *recorded*, not how the
+        chain moves. The chain always advances on the extended state, because
+        that is what makes the proposal involutive. But the recorded (q, p)
+        path then depends on the copies, which drift: re-integrating the same
+        (q, p) start with copies reset moves the endpoint by 6-8% of a target
+        standard deviation. As surrogate training data that is label noise on a
+        map that is not a function of its inputs. With the flag set, each
+        iteration additionally integrates from the visited (q, p) with the
+        copies reset and records *that*, so the labels define an honest map on
+        (q, p) --- the approximation of the true flow a surrogate is meant to
+        learn. Costs one extra integration per iteration; sampling is unchanged.
+        """
         device = q_init.device
         q = q_init.clone().detach()
         qb = q.clone()
@@ -674,9 +694,20 @@ class RMHMC(HMCBase):
                 traj_q, traj_p, traj_f, qb_new, pb_new = self.step(q, p, qb, pb)
                 q_new, p_new = traj_q[-1].to(device).detach(), traj_p[-1].to(device).detach()
                 new_ham = self.extended_hamiltonian(q_new, p_new, qb_new, pb_new)
-                param_trajectories.append(traj_q)
-                momentum_trajectories.append(traj_p)
-                field_trajectories.append(traj_f)
+                rec_q, rec_p, rec_f = traj_q, traj_p, traj_f
+                if functional_trajectories:
+                    # record the copy-reset integration instead: same (q, p) in,
+                    # same trajectory out, independent of where the copies
+                    # drifted. It is guarded separately: this integration is for
+                    # recording only, and must not be able to divert the chain
+                    # into the reject branch and change the sequence of moves.
+                    try:
+                        rec_q, rec_p, rec_f, _, _ = self.step(q, p)
+                    except util.LogProbError:
+                        pass
+                param_trajectories.append(rec_q)
+                momentum_trajectories.append(rec_p)
+                field_trajectories.append(rec_f)
                 if self.metropolis_accept_step(ham, new_ham):
                     q, qb = q_new, qb_new.detach()             # carry the extended state
                     q_prev, qb_prev = q.clone(), qb.clone()
@@ -717,7 +748,8 @@ class SurrogateNeuralODERMHMC(SurrogateNeuralODEHMC):
 
     def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int,
                          solver=None, sensitivity: str = "autograd"):
-        param_examples, momenta_examples, field_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
+        param_examples, momenta_examples, field_examples, _ = self.base_sampler.sample(
+            q_init, num_samples=burn, functional_trajectories=True)
         if solver is None:
             solver = NonSeparableSynchronousLeapfrog(binding_const=self.base_sampler.binding_const)
         if self.model_type == "explicit_hamiltonian":
@@ -760,6 +792,19 @@ class SymplecticRMHMC(SymplecticHMC):
     the separable case; only momentum resampling and the Metropolis
     correction change, delegating to the Riemannian base sampler.
     """
+
+    def create_surrogate(self, q_init, burn, epochs, use_gradient=False,
+                         n_blocks=8, pair_mode="all"):
+        # request copy-reset trajectories: see RMHMC.sample. Without this the
+        # training targets are not a function of the training inputs.
+        original = self.base_sampler.sample
+        self.base_sampler.sample = lambda q, num_samples=1, **kw: original(
+            q, num_samples=num_samples, functional_trajectories=True, **kw)
+        try:
+            super().create_surrogate(q_init, burn, epochs, use_gradient=use_gradient,
+                                     n_blocks=n_blocks, pair_mode=pair_mode)
+        finally:
+            self.base_sampler.sample = original
 
     def gibbs(self, q=None):
         # the surrogate proposes on (q, p), so it targets exp(-H), not exp(-Hbar/2)

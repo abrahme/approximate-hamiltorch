@@ -1,4 +1,5 @@
 import math
+import os
 import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 import numpy as np
@@ -96,7 +97,8 @@ def plot_samples(sample_dict: Dict, mean, distribution_name=""):
         axs.flat[index].set_visible(False)
     fig.suptitle(f"Samples from {distribution_name} Distribution", y=1.005)
     plt.tight_layout()
-    plt.savefig(f'experiments/{distribution_name}_samples.png',bbox_inches='tight')
+    suffix = "_smoke" if os.environ.get("HAMILTORCH_SMOKE", "0") == "1" else ""
+    plt.savefig(f'experiments/{distribution_name}_samples{suffix}.png', bbox_inches='tight')
     # plt.show()
 
 
@@ -145,7 +147,8 @@ def plot_reversibility(sample_dict: Dict, samples, distribution = ""):
     axs.flat[0].set_ylim(lo[1] - pad[1], hi[1] + pad[1])
     fig.suptitle(f"Reversibility of {distribution}", y=1.005)
     plt.tight_layout()
-    plt.savefig(f"experiments/{distribution}_reversibility.png")
+    suffix = "_smoke" if os.environ.get("HAMILTORCH_SMOKE", "0") == "1" else ""
+    plt.savefig(f"experiments/{distribution}_reversibility{suffix}.png")
     # plt.show()
     plt.clf()
 
