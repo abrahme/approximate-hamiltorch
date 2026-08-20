@@ -179,11 +179,20 @@ class HMC(HMCBase):
                     accepted.append(0.0)
             except util.LogProbError:
                 num_rejected += 1
-                params = ret_params[-1].to(device)
                 params = param_burn_prev.clone()
+                accepted.append(0.0)
+                # record the frozen state: otherwise a target that fails on
+                # every draw leaves these lists empty and torch.stack raises
+                frozen = param_burn_prev.unsqueeze(0).expand(self.L + 1, -1).clone()
+                param_trajectories.append(frozen)
+                momentum_trajectories.append(torch.zeros_like(frozen))
+                gradient_trajectories.append(torch.zeros_like(frozen))
 
         util.progress_bar_end('Acceptance Rate {:.2f}'.format(1 - num_rejected/num_samples)) #need to adapt for burn
 
+        if not param_trajectories:
+            raise RuntimeError("HMC produced no trajectories: every draw raised "
+                               "LogProbError. Check the target's numerics or step size.")
         return torch.stack(param_trajectories,axis=0), torch.stack(momentum_trajectories,axis=0), torch.stack(gradient_trajectories,axis=0), torch.Tensor(accepted)
     
 
@@ -345,6 +354,7 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         accepted = []
         param_trajectories = []
         momentum_trajectories = []
+        traj_rows = None
         util.progress_bar_init('Sampling ({}; {})'.format("HMC", "Leapfrog"), num_samples, 'Samples')
         for n in range(num_samples):
             util.progress_bar_update(n)
@@ -353,6 +363,10 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                 ham = self.hamiltonian(params, momentum)
 
                 leapfrog_params, leapfrog_momenta = self.step(params, momentum)
+                # remember the trajectory shape: a flow-map surrogate returns a
+                # single row, an integrator-based one returns L+1, and the
+                # LogProbError branch must match whichever this sampler produces
+                traj_rows = leapfrog_params.shape[0]
                 proposed_params = leapfrog_params[-1].to(device).detach().requires_grad_()
                 proposed_momentum = leapfrog_momenta[-1].to(device)
                 new_ham = self.hamiltonian(proposed_params, proposed_momentum)
@@ -376,10 +390,18 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                     accepted.append(0.0)
             except util.LogProbError:
                 num_rejected += 1
-                params = param_burn_prev.clone()
+                params = param_burn_prev.clone().requires_grad_()
+                accepted.append(0.0)
+                rows = traj_rows if traj_rows is not None else self.L + 1
+                frozen = param_burn_prev.unsqueeze(0).expand(rows, -1).clone()
+                param_trajectories.append(frozen)
+                momentum_trajectories.append(torch.zeros_like(frozen))
 
         util.progress_bar_end('Acceptance Rate {:.2f}'.format(1 - num_rejected/num_samples))
 
+        if not param_trajectories:
+            raise RuntimeError("Surrogate sampler produced no trajectories: every draw "
+                               "raised LogProbError.")
         return torch.stack(param_trajectories, axis=0), torch.stack(momentum_trajectories, axis=0), None, torch.Tensor(accepted)
     
     def params_grad(self, *args, **kwargs):
@@ -467,14 +489,35 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
     
 
 class RMHMC(HMCBase):
-    """Riemannian-manifold HMC with the softabs metric (Betancourt 2013).
+    """Riemannian-manifold HMC via Tao's explicit integrator, sampled on the
+    *extended* state.
 
     The non-separable Hamiltonian
-        H(q, p) = -log p(q) + .5 * log det G(q) + .5 * p^T G(q)^{-1} p
-    (G is the softabs-regularized negative Hessian of log p) is integrated
-    with Tao's explicit binding integrator (Tao 2016; Cobb et al. 2019) on the
-    augmented state (q, p, q_cop, p_cop). Trajectories are returned in the
-    same (L+1)-point format as HMC.step so they can train surrogates directly.
+        H(q, p) = -log p(q) + .5 log det G(q) + .5 p^T G(q)^{-1} p
+    (G the softabs-regularised metric, Betancourt 2013) admits no explicit
+    symplectic integrator on its own. Tao (2016) introduces a copy (qb, pb) and
+    integrates the extended Hamiltonian
+
+        Hbar(q,p,qb,pb) = H(q,pb) + H(qb,p) + (w/2)(|q-qb|^2 + |p-pb|^2)
+
+    with a symmetric splitting that is symplectic *and* reversible on R^{4D}.
+
+    The subtlety this class exists to handle: those guarantees hold for the map
+    on the extended space. Projecting to (q, p) and re-initialising the copies
+    to the current state at every iteration --- the natural reading, and what
+    this code did previously --- destroys involutivity, and the resulting chain
+    is not a valid Metropolis scheme (we measured reversibility errors of
+    1e-2 to 1e0). We therefore carry the full extended state along the chain
+    and accept against Hbar, which is exactly valid for the extended target.
+    The momentum refresh is a Gibbs step: Hbar is quadratic in (p, pb), so
+    their joint conditional is Gaussian with precision
+
+        [[ G(qb)^-1 + w I ,      -w I      ],
+         [      -w I      , G(q)^-1 + w I  ]]
+
+    and can be drawn exactly. The reported q-marginal approaches the target as
+    w grows; that discrepancy is Tao's, and is controlled by w rather than
+    being an uncontrolled artefact of the sampler.
     """
 
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int,
@@ -489,23 +532,77 @@ class RMHMC(HMCBase):
     def metric_tensor(self, q):
         G, _ = fisher(q.detach(), self.log_prob_func, jitter=self.jitter,
                       softabs_const=self.softabs_const, metric=self.metric)
-        return G.detach()
-
-    def gibbs(self, q=None):
-        G = self.metric_tensor(q)
-        # symmetrize + jitter so the Cholesky never trips on fp asymmetry
-        G = .5 * (G + G.transpose(-1, -2)) + 1e-6 * torch.eye(self.dim, device=G.device, dtype=G.dtype)
-        try:
-            chol = torch.linalg.cholesky(G)
-        except torch.linalg.LinAlgError:
-            raise util.LogProbError()
-        z = torch.randn(self.dim, device=G.device, dtype=G.dtype)
-        return chol @ z
+        G = .5 * (G + G.transpose(-1, -2))
+        return G.detach() + 1e-6 * torch.eye(self.dim, device=G.device, dtype=G.dtype)
 
     def hamiltonian(self, q, p):
         return rm_hamiltonian(q, p, self.log_prob_func, self.jitter, 1.,
                               softabs_const=self.softabs_const, sampler=Sampler.RMHMC,
                               integrator=Integrator.IMPLICIT, metric=self.metric)
+
+    def extended_hamiltonian(self, q, p, qb, pb):
+        """Negative log density of the extended target, i.e. Hbar / 2.
+
+        On the diagonal q = qb, p = pb the binding term vanishes and
+        Hbar = 2 H(q, p), so a chain accepting against Hbar targets a
+        q-marginal proportional to exp(-2H) --- the *square* of the intended
+        density, which shrinks every standard deviation by a factor 1/sqrt(2).
+        We measured exactly that (sd 0.655 against a reference 0.987, ratio
+        0.66) before halving. Accepting against Hbar/2 targets exp(-H) as
+        intended; the halving does not affect the proposal's validity, since
+        volume preservation and involutivity are properties of the map and not
+        of the target.
+        """
+        binding = 0.5 * self.binding_const * (
+            torch.square(q - qb).sum() + torch.square(p - pb).sum())
+        return 0.5 * (self.hamiltonian(q, pb) + self.hamiltonian(qb, p) + binding)
+
+    def gibbs(self, q=None, qb=None):
+        """Exact joint draw of (p, pb) from their Gaussian conditional."""
+        if qb is None:
+            qb = q
+        w, D = self.binding_const, self.dim
+        Gq_inv = torch.linalg.inv(self.metric_tensor(q))
+        Gqb_inv = torch.linalg.inv(self.metric_tensor(qb))
+        eye = torch.eye(D, device=Gq_inv.device, dtype=Gq_inv.dtype)
+        prec = torch.zeros(2 * D, 2 * D, device=Gq_inv.device, dtype=Gq_inv.dtype)
+        prec[:D, :D] = Gqb_inv + w * eye     # p couples to the metric at qb
+        prec[D:, D:] = Gq_inv + w * eye      # pb couples to the metric at q
+        prec[:D, D:] = -w * eye
+        prec[D:, :D] = -w * eye
+        # The extended target is exp(-Hbar/2) (see extended_hamiltonian), so the
+        # conditional precision is half that implied by Hbar. Both the Gibbs
+        # refresh and the Metropolis ratio must use the same target: halving
+        # only the acceptance leaves the two steps targeting different
+        # distributions, and the q-marginal keeps the 1/sqrt(2) contraction.
+        prec = 0.5 * prec
+        prec = .5 * (prec + prec.T) + 1e-8 * torch.eye(2 * D, device=prec.device, dtype=prec.dtype)
+        try:
+            chol = torch.linalg.cholesky(prec)
+        except torch.linalg.LinAlgError:
+            raise util.LogProbError()
+        z = torch.randn(2 * D, device=prec.device, dtype=prec.dtype)
+        # x ~ N(0, prec^{-1}) via  L^T x = z
+        x = torch.linalg.solve_triangular(chol.transpose(-1, -2), z.unsqueeze(-1),
+                                          upper=True).squeeze(-1)
+        return x[:D], x[D:]
+
+    def gibbs_marginal(self, q):
+        """p ~ N(0, G(q)): the momentum conditional of the ORIGINAL Hamiltonian.
+
+        The extended draw in gibbs() belongs to exp(-Hbar/2) and is correct only
+        for a chain that carries (q, p, qb, pb). A surrogate proposes on (q, p)
+        directly --- its learned map replaces the integrator entirely --- so it
+        targets exp(-H) and must refresh from this conditional instead. Using
+        the extended draw there would reintroduce the marginal contraction the
+        extended formulation exists to avoid.
+        """
+        G = self.metric_tensor(q)
+        try:
+            chol = torch.linalg.cholesky(G)
+        except torch.linalg.LinAlgError:
+            raise util.LogProbError()
+        return chol @ torch.randn(self.dim, device=G.device, dtype=G.dtype)
 
     def params_grad(self, q, pass_grad=None):
         q = q.detach().requires_grad_()
@@ -514,91 +611,123 @@ class RMHMC(HMCBase):
         return q.grad
 
     def _dH(self, q, p):
-        """Gradients of the non-separable Hamiltonian w.r.t. position and momentum."""
+        """(dH/dq, dH/dp) of the *original* Hamiltonian at (q, p)."""
         q = q.detach().requires_grad_()
         p = p.detach().requires_grad_()
         H = self.hamiltonian(q, p)
-        dHdq, dHdp = torch.autograd.grad(H, (q, p))
-        return dHdq, dHdp
+        return torch.autograd.grad(H, (q, p))
 
-    def step(self, q, p, *args, **kwargs):
+    def step(self, q, p, qb=None, pb=None):
+        """Tao's symmetric splitting on the extended state.
+
+        Returns the (L+1)-point trajectories of q, p and of the exact field,
+        plus the final copies so the chain can carry the extended state.
+        """
+        if qb is None:
+            qb, pb = q.clone(), p.clone()
         eps = self.step_size
         angle = torch.as_tensor(2. * self.binding_const * eps, dtype=q.dtype, device=q.device)
         c, s = torch.cos(angle), torch.sin(angle)
-        q, p = q.detach(), p.detach()
-        q_cop, p_cop = q.clone(), p.clone()
-        ret_params = [q.clone()]
-        ret_momenta = [p.clone()]
-        # the exact field (dq/dt, dp/dt) = (dH/dp, -dH/dq) at each stored point
-        # is nearly-free training signal (one extra eval on top of six per step)
+        q, p, qb, pb = q.detach(), p.detach(), qb.detach(), pb.detach()
+        ret_q, ret_p = [q.clone()], [p.clone()]
         dHdq0, dHdp0 = self._dH(q, p)
-        ret_fields = [torch.cat([dHdp0, -dHdq0], -1)]
-        for n in range(self.L):
-            # phi_A^{eps/2}: H(q, p_cop) updates (p, q_cop)
-            dHdq, dHdp = self._dH(q, p_cop)
+        ret_field = [torch.cat([dHdp0, -dHdq0], -1)]
+        for _ in range(self.L):
+            # phi_A^{eps/2}: H(q, pb) updates (p, qb)
+            dHdq, dHdp = self._dH(q, pb)
             p = p - .5 * eps * dHdq
-            q_cop = q_cop + .5 * eps * dHdp
-            # phi_B^{eps/2}: H(q_cop, p) updates (q, p_cop)
-            dHdq, dHdp = self._dH(q_cop, p)
+            qb = qb + .5 * eps * dHdp
+            # phi_B^{eps/2}: H(qb, p) updates (q, pb)
+            dHdq, dHdp = self._dH(qb, p)
             q = q + .5 * eps * dHdp
-            p_cop = p_cop - .5 * eps * dHdq
-            # phi_C^{eps}: rotate difference coordinates by 2 * omega * eps
-            q_sum, q_diff = q + q_cop, q - q_cop
-            p_sum, p_diff = p + p_cop, p - p_cop
+            pb = pb - .5 * eps * dHdq
+            # phi_C^{eps}: rotate the difference coordinates
+            q_sum, q_diff = q + qb, q - qb
+            p_sum, p_diff = p + pb, p - pb
             q = .5 * (q_sum + c * q_diff + s * p_diff)
             p = .5 * (p_sum - s * q_diff + c * p_diff)
-            q_cop = .5 * (q_sum - c * q_diff - s * p_diff)
-            p_cop = .5 * (p_sum + s * q_diff - c * p_diff)
+            qb = .5 * (q_sum - c * q_diff - s * p_diff)
+            pb = .5 * (p_sum + s * q_diff - c * p_diff)
             # phi_B^{eps/2}
-            dHdq, dHdp = self._dH(q_cop, p)
+            dHdq, dHdp = self._dH(qb, p)
             q = q + .5 * eps * dHdp
-            p_cop = p_cop - .5 * eps * dHdq
+            pb = pb - .5 * eps * dHdq
             # phi_A^{eps/2}
-            dHdq, dHdp = self._dH(q, p_cop)
+            dHdq, dHdp = self._dH(q, pb)
             p = p - .5 * eps * dHdq
-            q_cop = q_cop + .5 * eps * dHdp
-            ret_params.append(q.clone())
-            ret_momenta.append(p.clone())
-            dHdq_n, dHdp_n = self._dH(q, p)
-            ret_fields.append(torch.cat([dHdp_n, -dHdq_n], -1))
-        return torch.stack(ret_params, axis=0), torch.stack(ret_momenta, axis=0), torch.stack(ret_fields, axis=0)
+            qb = qb + .5 * eps * dHdp
+            ret_q.append(q.clone()); ret_p.append(p.clone())
+            dq_n, dp_n = self._dH(q, p)
+            ret_field.append(torch.cat([dp_n, -dq_n], -1))
+        return (torch.stack(ret_q, 0), torch.stack(ret_p, 0),
+                torch.stack(ret_field, 0), qb, pb)
 
-    def sample(self, q_init, grad_func=None, num_samples=1000):
-        """Returns parameter and momentum trajectories (no gradient
-        trajectories for the non-separable Hamiltonian) plus acceptances."""
+    def sample(self, q_init, grad_func=None, num_samples=1000,
+               functional_trajectories=False):
+        """MH-within-Gibbs on the extended state (q, p, qb, pb).
+
+        `functional_trajectories` controls what gets *recorded*, not how the
+        chain moves. The chain always advances on the extended state, because
+        that is what makes the proposal involutive. But the recorded (q, p)
+        path then depends on the copies, which drift: re-integrating the same
+        (q, p) start with copies reset moves the endpoint by 6-8% of a target
+        standard deviation. As surrogate training data that is label noise on a
+        map that is not a function of its inputs. With the flag set, each
+        iteration additionally integrates from the visited (q, p) with the
+        copies reset and records *that*, so the labels define an honest map on
+        (q, p) --- the approximation of the true flow a surrogate is meant to
+        learn. Costs one extra integration per iteration; sampling is unchanged.
+        """
         device = q_init.device
-        params = q_init.clone().detach()
-        param_burn_prev = q_init.clone().detach()
-        num_rejected = 0
-        accepted = []
-        param_trajectories = []
-        momentum_trajectories = []
-        field_trajectories = []
-        util.progress_bar_init('Sampling ({}; {})'.format("RMHMC", "Explicit (Tao)"), num_samples, 'Samples')
+        q = q_init.clone().detach()
+        qb = q.clone()
+        q_prev, qb_prev = q.clone(), qb.clone()
+        num_rejected, accepted = 0, []
+        param_trajectories, momentum_trajectories, field_trajectories = [], [], []
+        util.progress_bar_init('Sampling ({}; {})'.format("RMHMC", "Tao, extended"),
+                               num_samples, 'Samples')
         for n in range(num_samples):
             util.progress_bar_update(n)
             try:
-                momentum = self.gibbs(params)
-                ham = self.hamiltonian(params, momentum)
-                leapfrog_params, leapfrog_momenta, leapfrog_fields = self.step(params, momentum)
-                param_trajectories.append(leapfrog_params)
-                momentum_trajectories.append(leapfrog_momenta)
-                field_trajectories.append(leapfrog_fields)
-                params = leapfrog_params[-1].to(device).detach()
-                momentum = leapfrog_momenta[-1].to(device).detach()
-                new_ham = self.hamiltonian(params, momentum)
+                p, pb = self.gibbs(q, qb)                       # exact Gibbs refresh
+                ham = self.extended_hamiltonian(q, p, qb, pb)
+                traj_q, traj_p, traj_f, qb_new, pb_new = self.step(q, p, qb, pb)
+                q_new, p_new = traj_q[-1].to(device).detach(), traj_p[-1].to(device).detach()
+                new_ham = self.extended_hamiltonian(q_new, p_new, qb_new, pb_new)
+                rec_q, rec_p, rec_f = traj_q, traj_p, traj_f
+                if functional_trajectories:
+                    # record the copy-reset integration instead: same (q, p) in,
+                    # same trajectory out, independent of where the copies
+                    # drifted. It is guarded separately: this integration is for
+                    # recording only, and must not be able to divert the chain
+                    # into the reject branch and change the sequence of moves.
+                    try:
+                        rec_q, rec_p, rec_f, _, _ = self.step(q, p)
+                    except util.LogProbError:
+                        pass
+                param_trajectories.append(rec_q)
+                momentum_trajectories.append(rec_p)
+                field_trajectories.append(rec_f)
                 if self.metropolis_accept_step(ham, new_ham):
-                    param_burn_prev = params.clone()
+                    q, qb = q_new, qb_new.detach()             # carry the extended state
+                    q_prev, qb_prev = q.clone(), qb.clone()
                     accepted.append(1.0)
                 else:
                     num_rejected += 1
-                    params = param_burn_prev.clone()
+                    q, qb = q_prev.clone(), qb_prev.clone()
                     accepted.append(0.0)
             except util.LogProbError:
                 num_rejected += 1
-                params = param_burn_prev.clone()
+                q, qb = q_prev.clone(), qb_prev.clone()
                 accepted.append(0.0)
+                frozen = q_prev.unsqueeze(0).expand(self.L + 1, -1).clone()
+                param_trajectories.append(frozen)
+                momentum_trajectories.append(torch.zeros_like(frozen))
+                field_trajectories.append(torch.zeros_like(frozen).repeat(1, 2))
         util.progress_bar_end('Acceptance Rate {:.2f}'.format(1 - num_rejected / num_samples))
+        if not param_trajectories:
+            raise RuntimeError("RMHMC produced no trajectories: every draw raised "
+                               "LogProbError. Check softabs_const / step size.")
         return (torch.stack(param_trajectories, axis=0), torch.stack(momentum_trajectories, axis=0),
                 torch.stack(field_trajectories, axis=0), torch.Tensor(accepted))
 
@@ -619,7 +748,8 @@ class SurrogateNeuralODERMHMC(SurrogateNeuralODEHMC):
 
     def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int,
                          solver=None, sensitivity: str = "autograd"):
-        param_examples, momenta_examples, field_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
+        param_examples, momenta_examples, field_examples, _ = self.base_sampler.sample(
+            q_init, num_samples=burn, functional_trajectories=True)
         if solver is None:
             solver = NonSeparableSynchronousLeapfrog(binding_const=self.base_sampler.binding_const)
         if self.model_type == "explicit_hamiltonian":
@@ -648,7 +778,8 @@ class SurrogateNeuralODERMHMC(SurrogateNeuralODEHMC):
         return torch.squeeze(leapfrog_values[..., :self.dim]), torch.squeeze(leapfrog_values[..., self.dim:2 * self.dim])
 
     def gibbs(self, q=None):
-        return self.base_sampler.gibbs(q)
+        # the surrogate proposes on (q, p), so it targets exp(-H), not exp(-Hbar/2)
+        return self.base_sampler.gibbs_marginal(q)
 
     def hamiltonian(self, q, p):
         return self.base_sampler.hamiltonian(q, p)
@@ -662,8 +793,22 @@ class SymplecticRMHMC(SymplecticHMC):
     correction change, delegating to the Riemannian base sampler.
     """
 
+    def create_surrogate(self, q_init, burn, epochs, use_gradient=False,
+                         n_blocks=8, pair_mode="all"):
+        # request copy-reset trajectories: see RMHMC.sample. Without this the
+        # training targets are not a function of the training inputs.
+        original = self.base_sampler.sample
+        self.base_sampler.sample = lambda q, num_samples=1, **kw: original(
+            q, num_samples=num_samples, functional_trajectories=True, **kw)
+        try:
+            super().create_surrogate(q_init, burn, epochs, use_gradient=use_gradient,
+                                     n_blocks=n_blocks, pair_mode=pair_mode)
+        finally:
+            self.base_sampler.sample = original
+
     def gibbs(self, q=None):
-        return self.base_sampler.gibbs(q)
+        # the surrogate proposes on (q, p), so it targets exp(-H), not exp(-Hbar/2)
+        return self.base_sampler.gibbs_marginal(q)
 
     def hamiltonian(self, q, p):
         return self.base_sampler.hamiltonian(q, p)

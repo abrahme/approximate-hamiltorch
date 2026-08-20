@@ -88,15 +88,21 @@ def funnel_log_prob(w):
     """Neal's funnel (2-D): v ~ N(0, 9), x ~ N(0, e^v).
 
     The canonical target where position-dependent curvature defeats plain HMC
-    and Riemannian methods shine. The conditional scale exp(v/2) underflows to
-    zero for strongly negative v, which would raise rather than be rejected, so
-    it is floored and non-finite values are surfaced as LogProbError for the
-    sampler to reject.
+    and Riemannian methods shine. The densities are written analytically rather
+    than via torch.distributions: the conditional scale exp(v/2) underflows and
+    v itself can leave the reals under an aggressive proposal, and the
+    distribution classes validate their arguments and *raise* on both, which
+    kills the chain instead of rejecting the draw. Non-finite values are
+    surfaced as LogProbError so the sampler rejects them.
     """
+    if not torch.isfinite(w).all():
+        raise util.LogProbError()
     v, x = w[..., 0], w[..., 1]
-    ll = torch.distributions.Normal(0., 3.).log_prob(v)
-    scale = torch.exp(v / 2).clamp(min=1e-12)
-    ll = ll + torch.distributions.Normal(0., scale).log_prob(x)
+    half_log_2pi = 0.5 * math.log(2.0 * math.pi)
+    # log N(v; 0, 3)
+    ll = -0.5 * (v / 3.0) ** 2 - math.log(3.0) - half_log_2pi
+    # log N(x; 0, exp(v/2)) = -x^2 e^{-v} / 2 - v/2 - log sqrt(2 pi)
+    ll = ll - 0.5 * torch.square(x) * torch.exp(-v) - 0.5 * v - half_log_2pi
     if not torch.isfinite(ll).all():
         raise util.LogProbError()
     return ll.sum()
@@ -180,3 +186,53 @@ def compute_rm_hamiltonian_error(model, test_initial_conditions, t, rm_hamiltoni
     if not errors:
         return torch.tensor(float("nan"))
     return torch.stack(errors).mean()
+
+
+def energy_distance(x, y, max_n=600, seed=0):
+    """Two-sample energy distance between sample sets x and y.
+
+    E = 2 E|X-Y| - E|X-X'| - E|Y-Y'|, which is zero if and only if the two
+    distributions coincide. It is parameter-free (no kernel bandwidth), works
+    in any dimension, and needs only pairwise distances.
+
+    This exists because effective sample size cannot certify a sampler. A map
+    with a large involution defect produces weakly autocorrelated paths --- ESS
+    reads high --- while targeting the wrong distribution; we measured a
+    surrogate posting 158 ESS/s against exact HMC's 48 at a reversibility error
+    of 7e8. ESS measures autocorrelation, not correctness, so any reported ESS
+    for a learned proposal needs a distributional check beside it.
+
+    Both sample sets are subsampled to at most max_n rows to keep the O(n^2)
+    distance matrices cheap; the estimator is unbiased under subsampling.
+    """
+    g = torch.Generator(device="cpu").manual_seed(seed)
+    def _prep(a):
+        a = a.detach().cpu()
+        if a.shape[0] > max_n:
+            idx = torch.randperm(a.shape[0], generator=g)[:max_n]
+            a = a[idx]
+        return a.double()
+    x, y = _prep(x), _prep(y)
+    if not (torch.isfinite(x).all() and torch.isfinite(y).all()):
+        return float("nan")
+    d_xy = torch.cdist(x, y).mean()
+    d_xx = torch.cdist(x, x).mean()
+    d_yy = torch.cdist(y, y).mean()
+    return float(2 * d_xy - d_xx - d_yy)
+
+
+def normalised_energy_distance(x, y, **kw):
+    """Energy distance scaled by the reference set's own spread.
+
+    The raw statistic carries the units of the target, so it is not comparable
+    across the distributions in a sweep. Dividing by E|Y-Y'| gives a
+    dimensionless number: 0 means the samples are indistinguishable from the
+    reference, and order 1 means they are as far from it as two independent
+    draws from the reference are from each other.
+    """
+    raw = energy_distance(x, y, **kw)
+    if raw != raw:
+        return float("nan")
+    y_ = y.detach().cpu().double()
+    scale = float(torch.cdist(y_, y_).mean())
+    return raw / scale if scale > 0 else float("nan")

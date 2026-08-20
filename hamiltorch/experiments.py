@@ -14,6 +14,7 @@ from hamiltorch.experiment_utils import (
     high_dimensional_gaussian_log_prob, compute_reversibility_error, params_grad,
     normal_normal_conjugate, compute_hamiltonian_error,
     funnel_log_prob, make_gp_regression_log_prob, compute_rm_hamiltonian_error,
+    normalised_energy_distance,
 )
 from arviz import ess
 import pandas as pd
@@ -33,6 +34,19 @@ SMOKE = os.environ.get("HAMILTORCH_SMOKE", "0") == "1"
 ODE_EPOCHS = 5 if SMOKE else 100
 SNN_EPOCHS = 5 if SMOKE else 300
 NN_EPOCHS = 5 if SMOKE else 100
+
+
+def _out(path):
+    """Route smoke-mode output to a separate file.
+
+    Smoke runs previously wrote to the same paths as real runs, so validating
+    the pipeline silently destroyed real results (this is how a genuine
+    rmhmc_results.csv was replaced by 15 rows of 1-second chains).
+    """
+    if not SMOKE:
+        return path
+    stem, dot, ext = path.rpartition(".")
+    return f"{stem}_smoke{dot}{ext}" if dot else path + "_smoke"
 
 
 def _chain_lengths(experiment_params):
@@ -269,11 +283,13 @@ def snn_gradient_ablation_experiment(device: str = "cuda"):
                     "distribution": distribution,
                     "reversibility_error": error.detach().cpu().numpy(),
                     "hamiltonian_error": hamiltonian_error.detach().cpu().numpy(),
+                    "distribution_error": normalised_energy_distance(
+                        model_dict[model_type]["samples"], true_samples),
                     "time": model_dict[model_type]["time"],
                     "ess": _compute_ess(model_dict[model_type]["samples"]),
                 })
 
-    pd.DataFrame(error_list).to_csv("experiments/snn_gradient_ablation.csv", index=False)
+    pd.DataFrame(error_list).to_csv(_out("experiments/snn_gradient_ablation.csv"), index=False)
     print("SNN gradient ablation results saved to experiments/snn_gradient_ablation.csv")
 
 
@@ -347,6 +363,10 @@ def surrogate_neural_ode_hmc_sample_size_experiment(device="cuda", distributions
                             "step_size": step_size,
                             "hamiltonian_error": hamiltonian_error.detach().cpu().numpy(),
                             "reversibility_error": error.detach().cpu().numpy(),
+                            # ESS cannot certify a sampler; this compares the
+                            # sampled distribution against the exact chain
+                            "distribution_error": normalised_energy_distance(
+                                model_dict[model]["samples"], true_samples),
                             "time": model_dict[model]["time"],
                             "ess": _compute_ess(model_dict[model]["samples"]),
                         })
@@ -358,7 +378,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment(device="cuda", distributions
                     )
                     plot_reversibility(model_dict, initial_positions, distribution=distribution)
 
-    pd.DataFrame(error_list).to_csv(output_csv, index=False)
+    pd.DataFrame(error_list).to_csv(_out(output_csv), index=False)
 
 
 def gp_sample_size_experiment(device="cuda", percents=None):
@@ -444,6 +464,10 @@ def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
                             "step_size": step_size,
                             "hamiltonian_error": hamiltonian_error.detach().cpu().numpy(),
                             "reversibility_error": error.detach().cpu().numpy(),
+                            # ESS cannot certify a sampler; this compares the
+                            # sampled distribution against the exact chain
+                            "distribution_error": normalised_energy_distance(
+                                model_dict[model]["samples"], true_samples),
                             "time": model_dict[model]["time"],
                             "ess": _compute_ess(model_dict[model]["samples"]),
                         })
@@ -455,7 +479,7 @@ def surrogate_neural_ode_hmc_sample_size_experiment_analytic():
                     )
                     plot_reversibility(model_dict, initial_positions, distribution=distribution)
 
-    pd.DataFrame(error_list).to_csv("experiments/diagnostic_results_analytic.csv", index=False)
+    pd.DataFrame(error_list).to_csv(_out("experiments/diagnostic_results_analytic.csv"), index=False)
 
 
 # ── Riemannian-manifold HMC experiment ──────────────────────────────────────
@@ -473,11 +497,14 @@ rmhmc_experiment_hyperparams = {
         "log_prob": lambda omega: normal_normal_conjugate(omega),
         "softabs_const": 1e1,
     },
+    # calibrated: at eps=.1 the chain diverges (v reaches 38 against a true
+    # range of about +/-9) and acceptance falls to 0.28; eps=.05 with a harder
+    # softabs regularization gives 0.85
     "funnel": {
-        "step_size": .1, "L": 5, "burn": 300, "N": 600,
+        "step_size": .05, "L": 5, "burn": 300, "N": 600,
         "params_init": torch.Tensor([0., 1.]),
         "log_prob": funnel_log_prob,
-        "softabs_const": 1e1,
+        "softabs_const": 1e3,
     },
 }
 
@@ -512,7 +539,7 @@ def run_rmhmc_experiment(model_type, distribution, percent=1, device="cuda"):
             rows = []
             for row in x:
                 try:
-                    qs, ps, _ = base_sampler.step(row[..., :dim], row[..., dim:])
+                    qs, ps, _, _, _ = base_sampler.step(row[..., :dim], row[..., dim:])
                     rows.append(torch.cat([qs, ps], -1))
                 except hamiltorch.util.LogProbError:
                     # diverged trajectory: freeze the row at its initial state
@@ -580,8 +607,10 @@ def rmhmc_experiment(device: str = "cuda"):
                                  log_prob_func=hp["log_prob"],
                                  dim=true_samples.shape[-1],
                                  softabs_const=hp["softabs_const"])
+            # the diagnostics evaluate maps on (q, p), so momenta come from the
+            # original conditional p ~ N(0, G(q)), not the extended-state draw
             initial_momentum = torch.stack(
-                [diag_sampler.gibbs(q) for q in initial_positions]
+                [diag_sampler.gibbs_marginal(q) for q in initial_positions]
             )
             initial_conditions = torch.cat([initial_positions, initial_momentum], -1)
 
@@ -603,6 +632,8 @@ def rmhmc_experiment(device: str = "cuda"):
                     "step_size": hp["step_size"],
                     "reversibility_error": error.detach().cpu().numpy(),
                     "rm_hamiltonian_error": float(rm_h_error.cpu()),
+                    "distribution_error": normalised_energy_distance(
+                        model_dict[model_type]["samples"], true_samples),
                     "time": model_dict[model_type]["time"],
                     "ess": _compute_ess(model_dict[model_type]["samples"]),
                 })
@@ -614,7 +645,7 @@ def rmhmc_experiment(device: str = "cuda"):
             )
             plot_reversibility(model_dict, initial_positions, distribution=f"rmhmc_{distribution}")
 
-    pd.DataFrame(error_list).to_csv("experiments/rmhmc_results.csv", index=False)
+    pd.DataFrame(error_list).to_csv(_out("experiments/rmhmc_results.csv"), index=False)
     print("RMHMC experiment results saved to experiments/rmhmc_results.csv")
 
 
@@ -687,6 +718,8 @@ def symmetrization_control_experiment(device: str = "cuda"):
                 err, _, _ = compute_reversibility_error(results[label]["model"], init, t=t_span)
                 rows.append({
                     "arm": label,
+                    "distribution_error": normalised_energy_distance(
+                        results[label]["samples"], true_samples),
                     "effective_depth": {"HMC": 0, "plain-4": 4, "plain-8": 8, "plain-16": 16,
                                         "Rev-4": 8, "Rev-8": 16}[label],
                     "params": results[label]["params"],
@@ -696,7 +729,7 @@ def symmetrization_control_experiment(device: str = "cuda"):
                     "ess": _compute_ess(results[label]["samples"]),
                     "time": results[label]["time"],
                 })
-    pd.DataFrame(rows).to_csv("experiments/symmetrization_control.csv", index=False)
+    pd.DataFrame(rows).to_csv(_out("experiments/symmetrization_control.csv"), index=False)
     print("Symmetrization control saved to experiments/symmetrization_control.csv")
 
 
@@ -752,7 +785,7 @@ def pair_mode_experiment(device: str = "cuda"):
             })
             print(f"  L={L} mode={mode}: {pairs_per_traj} pairs/traj, "
                   f"train {train_time:.1f}s, ESS {rows[-1]['ess']:.1f}")
-    pd.DataFrame(rows).to_csv("experiments/pair_mode.csv", index=False)
+    pd.DataFrame(rows).to_csv(_out("experiments/pair_mode.csv"), index=False)
     print("Pair-mode results saved to experiments/pair_mode.csv")
 
 
@@ -785,5 +818,5 @@ def trajectory_length_experiment(device: str = "cuda"):
                 print(f"  L={L} {label}: ESS {e:.1f}, {elapsed:.1f}s, ESS/s {e/max(elapsed,1e-9):.2f}")
         finally:
             experiment_hyperparams[distribution]["L"] = saved
-    pd.DataFrame(rows).to_csv("experiments/trajectory_length.csv", index=False)
+    pd.DataFrame(rows).to_csv(_out("experiments/trajectory_length.csv"), index=False)
     print("Trajectory-length results saved to experiments/trajectory_length.csv")
