@@ -5,7 +5,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", required=True,
                         choices=["sample_size", "sample_size_analytic", "snn_ablation",
-                                 "rmhmc", "gp", "symmetry_control", "pair_mode", "traj_length", "plot_ess"],
+                                 "rmhmc", "gp", "symmetry_control", "pair_mode", "traj_length",
+                                 "advdiff", "advdiff_full", "advdiff_gh", "advdiff_gh_full", "plot_ess"],
                         help="Which experiment or plot to run")
     parser.add_argument("--device", default="cpu", help="Compute device (cpu, cuda, mps:0)")
     parser.add_argument("--smoke", action="store_true",
@@ -25,6 +26,8 @@ if __name__ == "__main__":
         snn_gradient_ablation_experiment,
         rmhmc_experiment,
         gp_sample_size_experiment,
+        advection_diffusion_experiment,
+        advection_diffusion_gh_experiment,
         symmetrization_control_experiment,
         pair_mode_experiment,
         trajectory_length_experiment,
@@ -41,6 +44,14 @@ if __name__ == "__main__":
         rmhmc_experiment(args.device)
     elif args.experiment == "gp":
         gp_sample_size_experiment(args.device)
+    elif args.experiment == "advdiff":
+        advection_diffusion_experiment(args.device)
+    elif args.experiment == "advdiff_full":
+        advection_diffusion_experiment(args.device, full=True)
+    elif args.experiment == "advdiff_gh":
+        advection_diffusion_gh_experiment(args.device)
+    elif args.experiment == "advdiff_gh_full":
+        advection_diffusion_gh_experiment(args.device, full=True)
     elif args.experiment == "symmetry_control":
         symmetrization_control_experiment(args.device)
     elif args.experiment == "pair_mode":
