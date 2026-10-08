@@ -5,9 +5,9 @@ from hamiltorch.hmc import HMC, RMHMC
 from hamiltorch.symplectic import (
     SymplecticNeuralNetwork, GSymplecticNeuralNetwork, TimeSymmetricSymplectic,
 )
-from hamiltorch.experiment_utils import (banana_log_prob, funnel_log_prob,
+from hamiltorch.experiment_utils import (banana_log_prob, funnel_log_prob, gaussian_log_prob,
                                         make_gp_regression_log_prob, normal_normal_conjugate,
-                                        normalised_energy_distance)
+                                        normalised_energy_distance, compute_hamiltonian_error)
 
 
 class LeapfrogTrajectoryTestCase(unittest.TestCase):
@@ -303,6 +303,140 @@ class DistributionErrorTestCase(unittest.TestCase):
         # what an unsymmetrized SympNet actually produces: two lobes, hole at the mode
         bimodal = torch.cat([self._draw(750) - 2.0, self._draw(750) + 2.0])
         self.assertGreater(normalised_energy_distance(bimodal, self.ref), 0.2)
+
+    def test_subsampling_branch(self):
+        # the > max_n branch is the one smoke runs never reach: their chains
+        # are shorter than max_n, so a failure there surfaces only in a real
+        # run, hours in. Exercise it directly.
+        same = normalised_energy_distance(self.ref, self.ref, max_n=50)
+        self.assertLess(abs(same), 0.15)
+        shifted = normalised_energy_distance(self.ref + 3.0, self.ref, max_n=50)
+        self.assertGreater(shifted, 0.5)
+
+
+class AdvectionDiffusionTargetTestCase(unittest.TestCase):
+    """The passive-scalar Bayesian inverse problem of Borggaard et al. (2020),
+    Example 4.2, used as the surrogate-HMC benchmark in Glatt-Holtz et al.
+    (2024). A small truncation keeps the PDE solves cheap; the properties
+    checked here do not depend on the truncation."""
+
+    @classmethod
+    def setUpClass(cls):
+        from hamiltorch.experiment_utils import make_advection_diffusion_log_prob
+        torch.set_default_device("cpu")
+        # float64 so the checks measure the construction, not rounding
+        lp, cls.info = make_advection_diffusion_log_prob(
+            k_max=2, grid=32, dtype=torch.float64)
+        # stashed in the dict, not on the class: a bare function set as a class
+        # attribute becomes a bound method and would receive self as its first
+        # argument
+        cls.info["log_prob"] = lp
+        cls.n = cls.info["n_params"]
+
+    def test_basis_is_divergence_free(self):
+        # div(a f(k.x)) = (a.k) f'(k.x), and the construction takes a = k_perp,
+        # so every basis field -- hence every flow the parameterization can
+        # express -- is divergence free by algebra rather than by penalty
+        torch.manual_seed(0)
+        v = self.info["velocity"](torch.randn(self.n, dtype=torch.float64))
+        g = v.shape[-1]
+        f = torch.fft.fftfreq(g, d=1.0 / g).to(torch.float64)
+        KX, KY = f.view(-1, 1).expand(g, g), f.view(1, -1).expand(g, g)
+        div = torch.fft.ifft2(
+            2j * torch.pi * (KX * torch.fft.fft2(v[0]) + KY * torch.fft.fft2(v[1]))).real
+        self.assertLess(float(div.abs().max()), 1e-9)
+
+    def test_true_flow_is_the_intended_field(self):
+        # v* = [8 cos 2 pi y, 8 cos 2 pi x]
+        v = self.info["velocity"](self.info["w_true"])
+        g = v.shape[-1]
+        xs = torch.arange(g, dtype=torch.float64) / g
+        gx, gy = xs.view(-1, 1).expand(g, g), xs.view(1, -1).expand(g, g)
+        want = torch.stack([8 * torch.cos(2 * torch.pi * gy),
+                            8 * torch.cos(2 * torch.pi * gx)])
+        self.assertLess(float((v - want).abs().max()), 1e-12)
+
+    def test_observations_cannot_distinguish_v_from_minus_v(self):
+        # the symmetry that makes the posterior multimodal: at x1 = (0,0) and
+        # x2 = (1/2,1/2) the solute concentration is the same under v* and -v*,
+        # so the likelihood alone cannot separate them
+        fwd = self.info["solve"](self.info["w_true"])
+        rev = self.info["solve"](-self.info["w_true"])
+        self.assertLess(float((fwd - rev).abs().max()), 1e-10)
+
+    def test_posterior_is_exactly_bimodal(self):
+        # the prior is mean zero, so equal likelihood implies equal posterior
+        a = float(self.info["log_prob"](self.info["w_true"]))
+        b = float(self.info["log_prob"](-self.info["w_true"]))
+        self.assertLess(abs(a - b), 1e-8)
+        # and both are far better than a draw from the prior
+        torch.manual_seed(0)
+        w = torch.randn(self.n, dtype=torch.float64) * self.info["prior_var"].sqrt()
+        self.assertGreater(a, float(self.info["log_prob"](w)))
+
+    def test_gradient_matches_finite_differences(self):
+        # HMC is only correct if the gradient through the PDE solve is
+        torch.manual_seed(1)
+        w = (torch.randn(self.n, dtype=torch.float64)
+             * self.info["prior_var"].sqrt() * 0.3).requires_grad_(True)
+        g, = torch.autograd.grad(self.info["log_prob"](w), w)
+        eps = 1e-5
+        for i in (0, self.n // 2, self.n - 1):
+            wp, wm = w.detach().clone(), w.detach().clone()
+            wp[i] += eps
+            wm[i] -= eps
+            fd = float((self.info["log_prob"](wp) - self.info["log_prob"](wm)) / (2 * eps))
+            self.assertLess(abs(float(g[i]) - fd) / max(abs(fd), 1e-8), 1e-5)
+
+    def test_large_flows_do_not_silently_diverge(self):
+        # a prior draw reaches |v| ~ 20-40, well above the true flow's 8, and a
+        # fixed step would violate the CFL condition and return a non-finite
+        # density -- which HMC would reject, truncating the prior rather than
+        # sampling it. Substepping must keep every prior draw finite.
+        torch.manual_seed(0)
+        std = self.info["prior_var"].sqrt()
+        for _ in range(8):
+            w = torch.randn(self.n, dtype=torch.float64) * std
+            self.assertTrue(torch.isfinite(self.info["log_prob"](w)).all())
+
+
+class HamiltonianErrorTestCase(unittest.TestCase):
+    """compute_hamiltonian_error must measure drift of the true Hamiltonian
+    along each trajectory. The previous implementation compared a sum over all
+    N initial conditions against a sum over each trajectory's L+1 points and
+    reported (N-(L+1))/N ~ 0.94 for every map, the identity included."""
+
+    def setUp(self):
+        hamiltorch.set_random_seed(0)
+        self.N, self.D, self.L = 40, 3, 5
+        q, p = torch.randn(self.N, self.D), torch.randn(self.N, self.D)
+        self.ic = torch.cat([q, p], -1)
+        self.t = torch.linspace(0, 0.5, self.L + 1)
+
+    def test_identity_map_has_zero_drift(self):
+        identity = lambda x, t: (None, x.unsqueeze(0).expand(len(t), *x.shape).clone())
+        err = compute_hamiltonian_error(identity, self.ic, self.t, gaussian_log_prob)
+        self.assertEqual(err.shape, (self.N,))
+        self.assertLess(float(err.abs().max()), 1e-12)
+
+    def test_exact_leapfrog_drift_is_small_and_second_order(self):
+        drifts = []
+        for eps in (0.1, 0.05):
+            s = HMC(step_size=eps, L=self.L, log_prob_func=gaussian_log_prob, dim=self.D)
+            model = lambda x, t, s=s: (None, torch.cat(
+                s.step(x[..., :self.D], x[..., self.D:])[:2], -1))
+            drifts.append(float(compute_hamiltonian_error(
+                model, self.ic, self.t, gaussian_log_prob).mean()))
+        self.assertLess(drifts[0], 1e-2)            # not 0.94
+        self.assertLess(drifts[1] * 3, drifts[0])   # ~4x per halving of eps
+
+    def test_non_conserving_map_is_detected(self):
+        # doubling the momentum at every step is not a Hamiltonian flow
+        blowup = lambda x, t: (None, torch.stack([
+            torch.cat([x[..., :self.D], x[..., self.D:] * 2.0 ** k], -1)
+            for k in range(len(t))]))
+        err = compute_hamiltonian_error(blowup, self.ic, self.t, gaussian_log_prob)
+        self.assertGreater(float(err.mean()), 1.0)
 
 
 if __name__ == "__main__":

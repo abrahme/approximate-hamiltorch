@@ -193,6 +193,17 @@ class HMC(HMCBase):
         if not param_trajectories:
             raise RuntimeError("HMC produced no trajectories: every draw raised "
                                "LogProbError. Check the target's numerics or step size.")
+        # An exact sampler that accepts nothing is a configuration fault, not a
+        # result, and it is indistinguishable from one at the CSV level. The
+        # common cause is a device mismatch -- a params_init built before
+        # set_default_device, whose every log_prob raises and is counted as a
+        # rejection -- so say so here rather than let it be read as a finding.
+        if num_rejected == num_samples and num_samples > 1:
+            print(f"!! WARNING: every one of {num_samples} proposals was rejected. "
+                  f"If this is the exact sampler, suspect a configuration fault "
+                  f"(params_init on {param_burn_prev.device} vs default device "
+                  f"{torch.get_default_device()}), not a property of the target.",
+                  flush=True)
         return torch.stack(param_trajectories,axis=0), torch.stack(momentum_trajectories,axis=0), torch.stack(gradient_trajectories,axis=0), torch.Tensor(accepted)
     
 
@@ -259,6 +270,18 @@ class SurrogateHMCBase(HMC):
         self.base_sampler = base_sampler
         self.model = None
         self.burn_state = None
+        # Optional replacement for the single warm-up chain. Glatt-Holtz et al.
+        # (2024) train on ~10k draws pooled from many short chains started from
+        # the prior, which covers every posterior mode; one chain started at a
+        # single point need not leave the mode it lands in, and a surrogate
+        # cannot learn dynamics in regions its training data never visits.
+        # Set to a callable(burn) -> (params, momenta, grads, accept).
+        self.warmup_source = None
+
+    def _warmup(self, q_init, burn, **kwargs):
+        if self.warmup_source is not None:
+            return self.warmup_source(burn)
+        return self.base_sampler.sample(q_init, num_samples=burn, **kwargs)
 
     @abstractmethod
     def create_surrogate(self, *args, **kwargs):
@@ -283,12 +306,16 @@ class SurrogateGradientHMC(SurrogateHMCBase):
     def __init__(self, step_size: float, L: int, log_prob_func: callable, dim: int, base_sampler: Union[HMC, HMCGaussianAnalytic] ):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler)
     
-    def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int):
-        param_examples, _, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
-        model =  NNgHMC(input_dim = self.dim, output_dim = self.dim, hidden_dim =  100 * self.dim)
+    def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int,
+                         hidden_dim=None, activations=None, train_kwargs=None):
+        param_examples, _, grad_examples, _ = self._warmup(q_init, burn)
+        model =  NNgHMC(input_dim = self.dim, output_dim = self.dim,
+                        hidden_dim = 100 * self.dim if hidden_dim is None else hidden_dim,
+                        activations = activations)
         
         self.model, _ = train(model, torch.flatten(param_examples, end_dim=1).detach(), 
-                              torch.flatten(grad_examples, end_dim=1).detach(), epochs=epochs)
+                              torch.flatten(grad_examples, end_dim=1).detach(), epochs=epochs,
+                              **(train_kwargs or {}))
         self.burn_state = param_examples[-1, -1, :].detach()
 
     def step(self, q, p, grad_func):
@@ -312,11 +339,15 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler)
         self.model_type = model_type
     
-    def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int, solver:str, sensitivity: str):
-        param_examples, momenta_examples, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
-        model = HNNODE(HNNEnergyDeriv(input_dim = self.dim, hidden_dim= 100 * self.dim) , solver = solver, sensitivity=sensitivity)
+    def create_surrogate(self, q_init: torch.Tensor, burn:int, epochs: int, solver:str, sensitivity: str,
+                         hidden_dim=None, activations=None, train_kwargs=None):
+        param_examples, momenta_examples, grad_examples, _ = self._warmup(q_init, burn)
+        h = 100 * self.dim if hidden_dim is None else hidden_dim
+        model = HNNODE(HNNEnergyDeriv(input_dim = self.dim, hidden_dim= h, activations=activations),
+                       solver = solver, sensitivity=sensitivity)
         if self.model_type == "explicit_hamiltonian":
-            model = HNNODE(HNN(HNNEnergyExplicit(self.dim, self.dim * 100)), sensitivity=sensitivity, solver = solver)
+            model = HNNODE(HNN(HNNEnergyExplicit(self.dim, h, activations=activations)),
+                           sensitivity=sensitivity, solver = solver)
 
         # Trajectories now include the initial state: L+1 points at times
         # 0, eps, ..., L*eps, so the integration grid spacing is exactly eps.
@@ -325,7 +356,8 @@ class SurrogateNeuralODEHMC(SurrogateHMCBase):
                                   y = torch.cat([param_examples, momenta_examples], dim = 2).detach(),
                                     t = torch.linspace(start = 0, end = self.L*self.step_size, steps=self.L + 1),
                                     epochs=epochs,
-                                    gradient_traj=grad_examples.detach())
+                                    gradient_traj=grad_examples.detach(),
+                                    **(train_kwargs or {}))
         self.burn_state = param_examples[-1, -1, :].detach()
 
     def step(self, q, p):
@@ -420,12 +452,12 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         super().__init__(step_size, L, log_prob_func, dim, base_sampler, model_type)
 
     def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int, use_gradient: bool = False,
-                         n_blocks: int = 8, pair_mode: str = "all"):
+                         n_blocks: int = 8, pair_mode: str = "all", train_kwargs=None):
         """n_blocks sets the depth of the underlying symplectic net. Note the
         time-symmetric wrapper applies that net twice, so a Rev model with
         n_blocks has the same *effective* depth as a plain model with
         2*n_blocks while carrying only half the parameters."""
-        param_examples, momenta_examples, grad_examples, _ = self.base_sampler.sample(q_init, num_samples=burn)
+        param_examples, momenta_examples, grad_examples, _ = self._warmup(q_init, burn)
         assert n_blocks % 2 == 0, "n_blocks must be even (alternating up/down)"
         modes = ["up", "down"] * (n_blocks // 2)
         model = (
@@ -450,7 +482,8 @@ class SymplecticHMC(SurrogateNeuralODEHMC):
         else:
             X, y, t = create_training_set_symplectic(input_trajectories, pair_mode=pair_mode)
         self.model, _ = train_symplectic(model, X=X, y=y, t=t * self.step_size,
-                                         epochs=epochs, gradient_traj=gradient_traj)
+                                         epochs=epochs, gradient_traj=gradient_traj,
+                                         **(train_kwargs or {}))
         self.burn_state = param_examples[-1, -1, :].detach()
     
     def step(self, q, p):
@@ -748,8 +781,8 @@ class SurrogateNeuralODERMHMC(SurrogateNeuralODEHMC):
 
     def create_surrogate(self, q_init: torch.Tensor, burn: int, epochs: int,
                          solver=None, sensitivity: str = "autograd"):
-        param_examples, momenta_examples, field_examples, _ = self.base_sampler.sample(
-            q_init, num_samples=burn, functional_trajectories=True)
+        param_examples, momenta_examples, field_examples, _ = self._warmup(
+            q_init, burn, functional_trajectories=True)
         if solver is None:
             solver = NonSeparableSynchronousLeapfrog(binding_const=self.base_sampler.binding_const)
         if self.model_type == "explicit_hamiltonian":

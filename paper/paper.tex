@@ -33,7 +33,8 @@
 \usepackage{wrapfig}
 
 \usepackage{dblfloatfix}% http://ctan.org/pkg/dblfloatfix
-\usepackage{lipsum}% http://ctan.org/pkg/lipsum
+% lipsum removed: placeholder-text package, never used in this document,
+% and its lipsum.ltd data file is absent from this TeX installation
 
 \def\R{\mathbb{R}}
 \def\N{\mathbb{N}}
@@ -247,9 +248,8 @@ Each model takes an input of size $2 \cdot D$, as the concatenated position $q$
 and momentum $p$ are fed to the model, and consists of a single hidden layer of
 $100 \cdot D$ units, where $D$ is the dimensionality of the parameter space. The
 \textbf{tanh} activation function is used to add non-linearity in the hidden
-layer. Brief descriptions of various architectures used are described below,
-along with accompanying diagrams \ref{fig:architecture}. All methods were
-implemented in pytorch \cite{paszke2019pytorch}.
+layer. Brief descriptions of the various architectures used are given below.
+All methods were implemented in pytorch \cite{paszke2019pytorch}.
 
 Models are trained for at most $100$ epochs with the Adam optimizer at an
 initial learning rate of $10^{-2}$. To keep the comparison between surrogates
@@ -379,21 +379,63 @@ Since SNNs can approximate any arbitrary symplectic map, there is no tangible di
 
 
 
-\begin{figure}
-    \centering
-    \subfloat[]{\includegraphics[width=0.46\columnwidth]{NNODE.drawio.png}}\hfill
-    \subfloat[]{\includegraphics[width=0.46\columnwidth]{HNNODE.drawio (1).png}}
-    \caption{ Neural Network Architectures used in experiments. Note (a) outputs the gradients directly, while (b) first models the Hamiltonian and then produces the gradients via auto-differentiation.}
-    \label{fig:architecture}
-\end{figure}
-
 \section{Experiments}
 
 We evaluate our method against baseline ``surrogate" and traditional methods by several criteria:
 \begin{enumerate}
-    \item Effective Samples per second 
+    \item Effective samples per second
     \item Adherence to Hamiltonian properties (conservation, reversibility, symplecticness)
+    \item Agreement between the sampled distribution and the target
 \end{enumerate}
+
+\paragraph{Why a distributional check is necessary.}
+\label{sec:energy-distance}
+The first criterion cannot stand alone. Effective sample size measures
+autocorrelation, not correctness: a proposal map with a large involution
+defect can produce a weakly autocorrelated chain --- and therefore a flattering
+ESS --- while converging to the wrong distribution. We encounter this twice
+below, once where an unsymmetrized flow map posts a competitive ESS/s at a
+reversibility error of $5 \times 10^{-4}$ (\Cref{tab:gp}), and once where the
+sampled measure is visibly split in two (\Cref{figure:gaussian}). Neither is
+detectable from ESS. We therefore report, alongside every ESS, a two-sample
+statistic comparing the draws a method produces against draws from the exact
+chain. As \Cref{sec:gp} shows, that statistic is itself not sufficient --- it
+catches the second case and misses the first --- which is why we treat the
+structural condition \eqref{eq:inv}, and not either empirical diagnostic, as
+the criterion of admissibility.
+
+The statistic is the \emph{energy distance} \cite{szekely2013energy}. For
+sample sets $X = \{x_i\}$ and $Y = \{y_j\}$ drawn from distributions $F$ and
+$G$,
+\begin{equation}
+    \mathcal{E}(F, G) \;=\; 2\,\mathbb{E}\|X - Y\| \;-\; \mathbb{E}\|X - X'\|
+                        \;-\; \mathbb{E}\|Y - Y'\|,
+    \label{eq:energy}
+\end{equation}
+where $X'$ and $Y'$ are independent copies. $\mathcal{E}$ is non-negative and
+vanishes if and only if $F = G$, so it tests equality of the full distribution
+rather than of any particular moment. It requires no kernel bandwidth or other
+tuning parameter, needs only pairwise Euclidean distances, and is defined in
+any dimension --- all convenient properties for a diagnostic that must be
+applied uniformly across targets of dimension $2$ through $30$.
+
+Because \eqref{eq:energy} carries the units of the target, it is not comparable
+across the distributions in a sweep. We therefore report the normalised
+quantity
+\begin{equation}
+    \widehat{\mathcal{E}} \;=\; \mathcal{E}(F, G) \,/\, \mathbb{E}\|Y - Y'\|,
+    \label{eq:energy-norm}
+\end{equation}
+taking $Y$ to be the exact-HMC chain on the same target. This is dimensionless
+and has a direct reading: $\widehat{\mathcal{E}} = 0$ means the samples are
+indistinguishable from the reference chain, while $\widehat{\mathcal{E}}$ of
+order $1$ means they sit as far from the reference as two independent draws
+from the reference sit from each other --- that is, no better than noise. Both
+expectations are estimated by their empirical averages, with both sample sets
+subsampled to at most $600$ points to keep the $O(n^2)$ distance matrices
+cheap; the estimator is unbiased under this subsampling. A method that samples
+the target correctly scores near zero however slowly it mixes, and a fast
+chain targeting the wrong measure is penalised regardless of its ESS.
 
 
 \subsection{Synthetic Results}
@@ -401,20 +443,24 @@ In the following plots, each model was trained on the warm-up trajectories
 generated by HMC. The table below details the parameters of the experiment
 (step size, samples), as well as the posterior distribution, up to a constant.
 The number of posterior samples generated was always equal to the number of
-training samples. All trajectories used $L = 5$ leapfrog steps and are recorded
-at the $L+1 = 6$ times $0, \epsilon, \ldots, 5\epsilon$, the initial state
-included; the surrogates are consequently supervised on time offsets up to
-$5\epsilon$, which is also the horizon at which they are asked to propose.
+training samples. The synthetic targets use $L = 5$ leapfrog steps and are
+recorded at the $L+1 = 6$ times $0, \epsilon, \ldots, 5\epsilon$, the initial
+state included; the surrogates are consequently supervised on time offsets up
+to $5\epsilon$, which is also the horizon at which they are asked to propose.
+The GP target of \Cref{sec:gp} instead uses $L = 20$ and $10^4$ posterior
+draws, matching \citet{Li_2019}; as \Cref{sec:gp} shows, that longer trajectory
+is precisely what separates the two families of surrogate.
 
 
 \begin{table}[t]
 \caption{Experiment parameters, including from L to R distribution name, log
 posterior density, step size, and number of training samples. The GP
-regression target is the posterior over three hyperparameters (log
-lengthscale, log signal variance, log noise variance) of a squared-exponential
-GP fit to $200$ observations under standard normal priors; each gradient
-evaluation requires an $O(n^3)$ Cholesky factorization, placing it in the
-expensive-likelihood regime that motivates surrogate methods.}
+regression target is the posterior over two hyperparameters (log lengthscale,
+log noise variance) of a Mat\'ern $\nu = 3/2$ GP fit to $n = 500$ observations
+with four standard-normal features, under standard normal priors; each
+gradient evaluation requires an $O(n^3)$ Cholesky factorization, placing it in
+the expensive-likelihood regime that motivates surrogate methods. We adopt the
+configuration of \citet{Li_2019} so that our numbers sit alongside theirs.}
 \label{Experiment parameters}
 \vskip 0.15in
 \begin{center}
@@ -428,7 +474,7 @@ Distribution & $log(p(\theta | y))$ & $\eta$ &  Samples\\
      Gaussian & $log(\mathcal{N}(0, diag(.25, 1, 4))$ & .3 &  $10^3$\\
      Normal-Gamma & $\frac{-(\theta_1^2)}{2 \cdot 1.5} - \frac{(1.7 - \theta_1)^2}{2 \cdot e^{\theta_2}}$ & .1 &  $3 \cdot 10^3$\\
      High-Dimensional Gaussian & $\frac{-\sum_i^{30} (\theta_i)^2}{2}$ & .1 &  $3 \cdot 10^3$\\
-     GP Regression & $log(\mathcal{N}(y; 0, K_\theta)) + log(\mathcal{N}(\theta; 0, I))$ & .05 &  $1.5 \cdot 10^3$\\
+     GP Regression & $log(\mathcal{N}(y; 0, K_\theta)) + log(\mathcal{N}(\theta; 0, I))$ & .05 &  $2 \cdot 10^3$\\
 \bottomrule
 
 \end{tabular}
@@ -561,15 +607,116 @@ involution condition that the Metropolis correction requires
 (\Cref{figure:reversibility-stats}).}\label{figure:hamiltonian-stats}
 \end{figure*}
 
+\subsection{Gaussian Process Regression: an Expensive Likelihood}
+\label{sec:gp}
+
+The synthetic targets above are cheap: a gradient of a two- or
+thirty-dimensional Gaussian costs less than a single forward pass of the
+network that replaces it, so no surrogate can win on wall-clock there, and
+the comparison measures approximation quality rather than economics. The GP
+target is the first in this work where the substitution can pay. Each gradient
+requires an $O(n^3)$ Cholesky factorization of a $500 \times 500$ matrix, and
+each proposal requires $L = 20$ of them in sequence.
+
+\begin{table}[t]
+\caption{GP hyperparameter inference, $n = 500$, $\epsilon = 0.05$, $L = 20$,
+$10^4$ draws. Best ESS/s over the four training budgets, with the reversibility
+error and normalised energy distance \eqref{eq:energy-norm} of the
+corresponding proposal map. Only maps with reversibility error below $10^{-6}$
+are admissible Metropolis proposals (\Cref{sec:symmetrization}); the
+unsymmetrized G-SympNet is listed to show that a competitive ESS/s can coexist
+with an invalid proposal, and its figure should not be read as a speedup.}
+\label{tab:gp}
+\vskip 0.1in
+\begin{center}
+\begin{small}
+\begin{tabular}{lrrcc}
+\toprule
+Method & ESS/s & vs.\ HMC & $\widehat{\mathcal{E}}$ & reversibility \\
+\midrule
+HMC (exact)                 & $48.3$  & $1.00\times$ & $0.001$ & $1\cdot10^{-12}$ \\
+\midrule
+NNgHMC \cite{Li_2019}       & $43.2$  & $0.89\times$ & $0.004$ & $1\cdot10^{-14}$ \\
+NNODEgHMC                   & $37.2$  & $0.77\times$ & $0.004$ & $1\cdot10^{-13}$ \\
+HNNODEgHMC                  & $20.4$  & $0.42\times$ & $0.001$ & $2\cdot10^{-13}$ \\
+\midrule
+Rev-G-SympNet               & $\mathbf{184.5}$ & $\mathbf{3.82\times}$ & $0.006$ & $7\cdot10^{-15}$ \\
+Rev-G-SympNet $+$ grad      & $129.0$ & $2.67\times$ & $0.005$ & $1\cdot10^{-14}$ \\
+\midrule
+G-SympNet (unsymmetrized)   & $158.1$ & \emph{invalid} & $0.001$ & $5\cdot10^{-4}$ \\
+\bottomrule
+\end{tabular}
+\end{small}
+\end{center}
+\vskip -0.1in
+\end{table}
+
+\Cref{tab:gp} reports the outcome, and it separates the two families of
+surrogate sharply. \emph{Every integrator-based surrogate is slower than exact
+HMC} ($0.41$--$0.83\times$), including the NNgHMC baseline of \citet{Li_2019}.
+This is not a failure of those models --- their reversibility is exact to
+machine precision and their energy drift is comparable to leapfrog's --- but a
+consequence of where the cost sits. A learned field still has to be integrated,
+so a proposal costs $L$ sequential network evaluations; on a GPU, where a
+$500\times500$ Cholesky takes roughly $4$\,ms, replacing the gradient with a
+network of comparable cost and then calling it $20$ times does not buy
+anything.
+
+The symmetrized flow map does win, and by a mechanism unavailable to the others:
+$\Psi_t$ is queried \emph{once} per proposal regardless of $L$, so the $20$
+sequential operations collapse into one. Rev-G-SympNet attains $184.5$ ESS/s
+against exact HMC's $48.3$, a factor of $3.8$. We stress that this is a
+wall-clock gain rather than a gain in sample quality: exact HMC attains the
+higher raw effective sample size ($18{,}634$ versus $11{,}609$), but takes six
+times as long to do so, and the two chains are distributionally
+indistinguishable ($\widehat{\mathcal{E}}$ of $0.001$ and $0.006$).
+
+Two qualifications matter for reading \Cref{tab:gp}. First, the quoted figures
+are the best over four training budgets, and for most surrogates that best
+occurs at the \emph{smallest} budget --- Rev-G-SympNet runs $184.5, 111.7,
+83.6, 72.2$ ESS/s as the budget grows. Training time is charged to the method,
+so a larger warm-up buys a better fit at a worse amortized rate; the advantage
+is partly an amortization effect and not purely a per-proposal one.
+
+Second, and more instructive, the unsymmetrized G-SympNet posts $158.1$ ESS/s,
+which would read as a $3.3\times$ speedup, at a reversibility error of
+$5\times10^{-4}$. It is not an admissible proposal. What is notable is that
+\emph{the distributional check does not detect this}: its normalised energy
+distance is $0.001$, indistinguishable from exact HMC's own value. The two
+diagnostics do not agree, and the disagreement is informative. At the smallest
+budget, where the same architecture has a reversibility error of
+$2.6\times10^{-1}$, the energy distance rises to $0.555$ and the failure is
+obvious by either measure. At $5\times10^{-4}$ the induced bias is real but
+smaller than a two-sample statistic can resolve from $600$ points.
+
+We draw two conclusions. Effective sample size certifies nothing on its own, as
+the $3.3\times$ figure above shows. But a distributional check is not a
+sufficient replacement either: it detects gross departures and misses small
+ones, and ``no detected bias'' at a practical sample size is not evidence of an
+unbiased chain. The structural condition is the sharper instrument, because it
+is a property of the map that can be verified exactly and at machine precision
+rather than estimated from draws. We therefore report both, and treat
+\eqref{eq:inv} rather than either empirical diagnostic as the criterion of
+admissibility.
+
 \section{Discussion and Future Work}
 Experiments in the Hamiltonian Monte Carlo setting for a few distributions showed that adding a trajectory deviation penalty to traditional NNgHMC \cite{Li_2019} allows for more efficient training; as shown in \Cref{figure:ess-vs-training}, fewer training samples were needed to produce proposals of similar quality. However, as the NNODEgHMC models are trained using Neural ODE methods, longer trajectory length could prove to be computationally costly. The benefit of gradient based models which are integrated with leapfrog integrators was clearly shown; they behave with proper Hamiltonian dynamics, if given enough training samples.
 
-On the contrary, directly learning the flow of the Hamiltonian through SNNs
-proved to be an interesting experiment; SNNs were able to produce quality
-samples from the posterior while approximating Hamiltonian dynamics. Unlike
-the integrator-based surrogates, whose training cost is independent of
-trajectory length, the SNN objective grows quadratically in $L$ through the
-pair construction, which mini-batching mitigates but does not remove.
+Directly learning the flow of the Hamiltonian through SNNs is the more
+consequential of the two directions, and \Cref{sec:gp} is where the case for
+it rests. On the cheap synthetic targets a flow map has nothing to offer: the
+gradient it replaces costs less than the network replacing it. On the GP
+target, where each gradient is an $O(n^3)$ factorization and a proposal needs
+$L = 20$ of them, the symmetrized flow map attains $3.8\times$ the ESS/s of
+exact HMC while every integrator-based surrogate --- including the NNgHMC
+baseline --- is \emph{slower} than exact HMC. The distinction is structural
+rather than one of fit quality: a learned field must still be integrated, so
+its proposal cost scales with $L$, whereas $\Psi_t$ is evaluated once whatever
+$L$ is. Unlike the integrator-based surrogates, whose training cost is
+independent of trajectory length, the SNN objective grows quadratically in $L$
+through the pair construction, which mini-batching mitigates but does not
+remove; supervising only the queried offset removes it entirely at some cost
+in fit.
 
 Two limitations of the flow-learning approach are worth separating. The first
 is statistical: what the SNN must learn is a map on the full $2D$-dimensional

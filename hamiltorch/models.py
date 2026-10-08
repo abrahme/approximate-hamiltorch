@@ -26,21 +26,47 @@ class EarlyStopper:
         return False
 
 
+# Named architectures from Glatt-Holtz et al. (2024), Section 3.3, which fits
+# NNgHMC to the same advection-diffusion inverse problem. Their activations
+# alternate softplus / relu / selu by depth; the widths are theirs verbatim.
+GH_ARCHITECTURES = {
+    "small":  ([512, 1024, 512], ["softplus", "relu", "softplus"]),
+    "medium": ([512, 1024, 2048, 1024, 512],
+               ["softplus", "relu", "softplus", "selu", "softplus"]),
+    "large":  ([512, 1024, 2048, 4096, 2048, 1024, 512],
+               ["softplus", "relu", "softplus", "selu", "softplus", "selu", "softplus"]),
+}
+_ACTS = {"softplus": nn.Softplus, "relu": nn.ReLU, "selu": nn.SELU, "tanh": nn.Tanh}
+
+
+def _make_mlp(input_dim, output_dim, hidden_dim, activations=None):
+    """hidden_dim may be an int (one hidden layer, the original behaviour) or a
+    list of widths. activations is a matching list of names, defaulting to tanh
+    throughout so existing single-layer callers are unchanged."""
+    widths = [hidden_dim] if isinstance(hidden_dim, int) else list(hidden_dim)
+    if activations is None:
+        activations = ["tanh"] * len(widths)
+    layers, prev = [], input_dim
+    for w, act in zip(widths, activations):
+        layers += [nn.Linear(prev, w), _ACTS[act]()]
+        prev = w
+    layers.append(nn.Linear(prev, output_dim))
+    return nn.Sequential(*layers)
+
+
 class NNgHMC(nn.Module):
     """
-    simple model which aims to model the gradient of the Hamiltonian directly 
+    simple model which aims to model the gradient of the Hamiltonian directly
     """
-    def __init__(self, input_dim: int, output_dim: int, hidden_dim: int) -> None:
+    def __init__(self, input_dim: int, output_dim: int, hidden_dim, activations=None) -> None:
         super(NNgHMC, self).__init__()
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
-
-        self.layer_1 = nn.Linear(in_features=self.input_dim, out_features = self.hidden_dim)
-        self.layer_2 = nn.Linear(in_features=self.hidden_dim, out_features = self.output_dim)
+        self.net = _make_mlp(input_dim, output_dim, hidden_dim, activations)
 
     def forward(self, x):
-        return self.layer_2(nn.Tanh()(self.layer_1(x)))    
+        return self.net(x)
 
 
 class HNNEnergyDeriv(nn.Module):
@@ -49,11 +75,12 @@ class HNNEnergyDeriv(nn.Module):
     H(q,p) = U(q) + .5*p^Tp
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int) -> None:
+    def __init__(self, input_dim: int, hidden_dim, activations=None) -> None:
         super(HNNEnergyDeriv, self).__init__()
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.potential_deriv = NNgHMC(input_dim = self.input_dim, output_dim=self.input_dim, hidden_dim=self.hidden_dim)
+        self.potential_deriv = NNgHMC(input_dim = self.input_dim, output_dim=self.input_dim,
+                                      hidden_dim=self.hidden_dim, activations=activations)
     def forward(self, x, *args, **kwargs):
         n = self.input_dim 
         q, p = x[..., :n], x[..., n:]
@@ -175,22 +202,19 @@ class HNNEnergyExplicit(nn.Module):
 
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int) -> None:
+    def __init__(self, input_dim: int, hidden_dim, activations=None) -> None:
         super(HNNEnergyExplicit, self).__init__()
         self.input_dim = input_dim
-        self.output_dim = 1 
+        self.output_dim = 1
         self.hidden_dim = hidden_dim
-        self.layer_1 = nn.Linear(in_features=self.input_dim, out_features = self.hidden_dim)
-        self.layer_2 = nn.Linear(in_features=hidden_dim, out_features = self.output_dim)
-
-
+        self.net = _make_mlp(input_dim, self.output_dim, hidden_dim, activations)
 
     def forward(self, x, *args, **kwargs):
         n = self.input_dim
         q, p = x[..., :n], x[..., n:]
         # squeeze the trailing potential dim: (N,1) + (N,) would broadcast to
         # (N,N), scaling the whole learned vector field by the batch size
-        potential = self.layer_2(nn.Tanh()(self.layer_1(q))).squeeze(-1)
+        potential = self.net(q).squeeze(-1)
         return potential + .5 * torch.square(p).sum(axis = -1)
     
 class RMHNNEnergyExplicit(nn.Module):
@@ -295,32 +319,78 @@ def _restore_best(model, best_state):
     return model
 
 
-def train(model: nn.Module, X, y, epochs = 100, lr = .01, loss_type = "l2", patience = 25):
+def train(model: nn.Module, X, y, epochs = 100, lr = .01, loss_type = "l2", patience = 25,
+          batch_size=None, val_frac=0.0):
+    """Fit `model` on (X, y).
+
+    Defaults are full-batch: one Adam step per epoch, which is all a small
+    single-hidden-layer network needs. That is far too few steps for a deep
+    network -- a 5M-parameter net given 100 gradient steps at lr 1e-2 diverges
+    rather than fits (measured: relative error 329, against 0.91 for the
+    shallow net on identical data). Pass `batch_size` for minibatch epochs and
+    `val_frac` to early-stop on a held-out split rather than the training loss,
+    which is the protocol of Glatt-Holtz et al. (2024): "train until the losses
+    for the training and testing sets began to diverge".
+    """
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
     print("Training Surrogate Model")
     loss_func = _make_loss(loss_type)
     early_stopper = EarlyStopper(patience=patience)
     best_loss, best_state = float("inf"), None
+
+    if val_frac > 0.0 and X.shape[0] > 10:
+        n_val = max(1, int(X.shape[0] * val_frac))
+        perm = torch.randperm(X.shape[0], device=X.device)
+        vi, ti = perm[:n_val], perm[n_val:]
+        Xv, yv, X, y = X[vi], y[vi], X[ti], y[ti]
+    else:
+        Xv = yv = None
+
+    n = X.shape[0]
     for epoch in range(epochs):
-        y_pred = model(X)
-        loss = loss_func(y_pred, y)
+        if batch_size is None or batch_size >= n:
+            loss = loss_func(model(X), y)
+            optimizer.zero_grad(); loss.backward(); optimizer.step()
+            epoch_loss = float(loss.detach())
+        else:
+            perm = torch.randperm(n, device=X.device)
+            total = 0.0
+            for s in range(0, n, batch_size):
+                idx = perm[s:s + batch_size]
+                loss = loss_func(model(X[idx]), y[idx])
+                optimizer.zero_grad(); loss.backward(); optimizer.step()
+                total += float(loss.detach()) * idx.numel()
+            epoch_loss = total / n
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        scheduler.step(loss)
+        # what drives scheduling, checkpointing and stopping is the validation
+        # loss when there is one: a deep net's training loss keeps falling long
+        # after the fit stops generalising
+        if Xv is not None:
+            with torch.no_grad():
+                monitor = float(loss_func(model(Xv), yv).detach())
+        else:
+            monitor = epoch_loss
+        scheduler.step(monitor)
 
-        loss_val = float(loss.detach())
-        if loss_val < best_loss:
-            best_loss = loss_val
+        if monitor < best_loss:
+            best_loss = monitor
             best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
-        if early_stopper.early_stop(loss_val):
+        if early_stopper.early_stop(monitor):
             break
     return _restore_best(model, best_state), epoch
 
 
-def train_ode(model: nn.Module, X, y, t,  epochs = 100, lr = .01, loss_type = "l2", gradient_traj = None, patience = 25, gradient_mode = "momentum"):
+def train_ode(model: nn.Module, X, y, t,  epochs = 100, lr = .01, loss_type = "l2", gradient_traj = None, patience = 25, gradient_mode = "momentum",
+              batch_size=None, val_frac=0.0):
+    """As `train`, for trajectory-supervised ODE surrogates.
+
+    `batch_size` and `val_frac` exist for the same reason as in `train`: a
+    deep network needs many more gradient steps than the one-per-epoch of
+    full-batch descent, and a deep network's training loss keeps falling after
+    the fit stops generalising. Defaults preserve the original full-batch
+    behaviour for the shallow nets.
+    """
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
     print("Training Surrogate ODE Model")
@@ -328,27 +398,53 @@ def train_ode(model: nn.Module, X, y, t,  epochs = 100, lr = .01, loss_type = "l
     loss_func = _make_loss(loss_type)
     early_stopper = EarlyStopper(patience=patience)
     best_loss, best_state = float("inf"), None
-    for epoch in range(epochs):
-        _, y_pred = model(X, t)
-        loss = loss_func(torch.swapaxes(y_pred, 0, 1)[..., :dims], y)
-        if gradient_traj is not None:
-            observed_flattened = torch.flatten(gradient_traj, end_dim = -2)
-            input_flattened = torch.flatten(y, end_dim = -2)
-            field = model.odefunc(input_flattened)
+
+    if val_frac > 0.0 and X.shape[0] > 10:
+        n_val = max(1, int(X.shape[0] * val_frac))
+        perm = torch.randperm(X.shape[0], device=X.device)
+        vi, ti = perm[:n_val], perm[n_val:]
+        Xv, yv = X[vi], y[vi]
+        gv = gradient_traj[vi] if gradient_traj is not None else None
+        X, y = X[ti], y[ti]
+        gradient_traj = gradient_traj[ti] if gradient_traj is not None else None
+    else:
+        Xv = yv = gv = None
+
+    def _loss_on(Xb, yb, gb):
+        _, y_pred = model(Xb, t)
+        l = loss_func(torch.swapaxes(y_pred, 0, 1)[..., :dims], yb)
+        if gb is not None:
+            field = model.odefunc(torch.flatten(yb, end_dim=-2))
+            obs = torch.flatten(gb, end_dim=-2)
             if gradient_mode == "full":
                 # observed is the complete (dq/dt, dp/dt) field (non-separable H)
-                gradient_loss = loss_func(field[..., :dims], observed_flattened)
+                l = l + loss_func(field[..., :dims], obs)
             else:
                 # observed is grad log p = dp/dt (separable H)
-                gradient_loss = loss_func(field[..., dims // 2 : ], observed_flattened)
+                l = l + loss_func(field[..., dims // 2 :], obs)
+        return l
+
+    n = X.shape[0]
+    for epoch in range(epochs):
+        if batch_size is None or batch_size >= n:
+            total_loss = _loss_on(X, y, gradient_traj)
+            optimizer.zero_grad(); total_loss.backward(); optimizer.step()
+            loss = total_loss
         else:
-            gradient_loss = 0.0
+            perm = torch.randperm(n, device=X.device)
+            running = 0.0
+            for s_ in range(0, n, batch_size):
+                idx = perm[s_:s_ + batch_size]
+                gb = gradient_traj[idx] if gradient_traj is not None else None
+                bl = _loss_on(X[idx], y[idx], gb)
+                optimizer.zero_grad(); bl.backward(); optimizer.step()
+                running += float(bl.detach()) * idx.numel()
+            total_loss = torch.as_tensor(running / n)
+            loss = total_loss
 
-        total_loss = gradient_loss + loss
-
-        optimizer.zero_grad()
-        total_loss.backward()
-        optimizer.step()
+        if Xv is not None:
+            with torch.no_grad():
+                total_loss = torch.as_tensor(float(_loss_on(Xv, yv, gv).detach()))
         scheduler.step(total_loss)
 
         if epoch % 20 == 0:
@@ -365,7 +461,7 @@ def train_ode(model: nn.Module, X, y, t,  epochs = 100, lr = .01, loss_type = "l
 
 def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwork], X, y, t, epochs = 300, lr = .01,
                      loss_type = "l2", gradient_traj = None, batch_size = 4096, patience = 20,
-                     gradient_weight = "auto"):
+                     gradient_weight = "auto", val_frac = 0.0):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(2, patience // 4))
     print("Training Surrogate Symplectic Model")
@@ -374,6 +470,19 @@ def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwo
     loss_func = _make_loss(loss_type)
     early_stopper = EarlyStopper(patience=patience)
     best_loss, best_state = float("inf"), None
+    # Stop on held-out pairs, not training pairs: with the endpoint
+    # construction the training set is small and a deep net's training loss
+    # keeps falling after the proposal stops improving. Parity with `train`.
+    if val_frac > 0.0 and X.shape[0] > 10:
+        n_val = max(1, int(X.shape[0] * val_frac))
+        perm0 = torch.randperm(X.shape[0], device=X.device)
+        vi, ti = perm0[:n_val], perm0[n_val:]
+        Xv, yv, tv = X[vi], y[vi], t[vi]
+        gvv = gradient_traj[vi] if gradient_traj is not None else None
+        X, y, t = X[ti], y[ti], t[ti]
+        gradient_traj = gradient_traj[ti] if gradient_traj is not None else None
+    else:
+        Xv = yv = tv = gvv = None
     N = X.shape[0]
     dt0 = torch.zeros(1, device=X.device)
     # The gradient term is typically 3-35x the trajectory term at init, so an
@@ -431,6 +540,10 @@ def train_symplectic(model: Union[SymplecticNeuralNetwork,GSymplecticNeuralNetwo
             num_batches += 1
 
         epoch_loss /= max(num_batches, 1)
+        if Xv is not None:
+            with torch.no_grad():
+                vl = float(loss_func(model.step(Xv, tv), yv).detach())
+            epoch_loss = vl
         scheduler.step(epoch_loss)
         if epoch % 20 == 0:
             print(f"Epoch {epoch}: loss {epoch_loss:.6f}")
