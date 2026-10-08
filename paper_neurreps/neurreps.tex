@@ -19,7 +19,7 @@
 \jmlrworkshop{Symmetry and Geometry in Neural Representations}
 
 \title[Flow-Map Surrogates for HMC]{Learned Flow Maps as Hamiltonian Monte Carlo
-Proposals, and the Symmetry They Require}
+Proposals}
 
 % Authors omitted for double-blind review.
 
@@ -41,22 +41,17 @@ Making the substitution work requires more than symplecticity. A Hamiltonian
 flow carries two structures --- it preserves the symplectic form, and it is
 time-reversal symmetric --- and a Metropolis correction consumes the second, in
 the form of an involution. Symplectic networks supply the first by architecture
-and the second not at all, missing it by $\mathcal{O}(10^{-1})$, so they are not
+and the second not at all, so they are not
 admissible proposals as they stand. Composing the network with its
 momentum-conjugate inverse restores the missing symmetry exactly, as an
 algebraic identity in the weights and at no cost in parameters; this is the
 construction of \citet{valperga2022reversible}, which we transfer from dynamics
 prediction to sampling and instantiate with closed-form inverses for the LA- and
-G-SympNet layers. We also find that the conventional all-pairs training set is
-not merely wasteful but harmful --- supervising only the single time offset the
-sampler queries is $1275\times$ cheaper at $L=50$ and fits better. On
+G-SympNet layers. On
 Gaussian-process hyperparameter inference at the configuration of
 \citet{Li_2019}, the resulting sampler attains $3.7\times$ the effective samples
 per second of exact HMC, while every integrator-based surrogate we test is
-\emph{slower} than exact HMC. We report one cautionary result throughout: an
-unsymmetrized network posts a competitive $142$ ESS/s at a reversibility error
-of $5\times10^{-4}$, so effective sample size alone cannot certify a learned
-proposal.
+\emph{slower} than exact HMC. 
 \end{abstract}
 
 \begin{keywords}
